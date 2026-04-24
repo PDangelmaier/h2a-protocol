@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://h2a-protocol.org/schema/orchestration-policy.json",
+  "title": "H2A Orchestration Policy",
+  "description": "Defines what UI operations an agent is allowed to perform, at what autonomy level",
+  "type": "object",
+  "properties": {
+    "allowedOperations": {
+      "type": "array",
+      "items": {
+        "enum": ["navigate", "fill", "click", "scroll", "focus", "blur", "select", "toggle", "wait", "notify"]
+      },
+      "description": "Operations the agent may request"
+    },
+    "deniedOperations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Explicitly forbidden operations (overrides allowed)"
+    },
+    "navigationScope": {
+      "enum": ["same-origin", "same-app", "allowlisted", "any"],
+      "default": "same-origin",
+      "description": "Where the agent may navigate to"
+    },
+    "navigationAllowlist": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" },
+      "description": "Allowed external URLs when navigationScope is 'allowlisted'"
+    },
+    "actionTiers": {
+      "type": "object",
+      "description": "Maps operation patterns to autonomy tiers",
+      "properties": {
+        "autonomous": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Operations that proceed without confirmation (e.g., 'fill', 'scroll')"
+        },
+        "confirmable": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Operations that require user confirmation (e.g., 'navigate', 'submit')"
+        },
+        "restricted": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Operations that require explicit approval and are logged (e.g., 'delete', 'payment')"
+        }
+      }
+    },
+    "rateLimits": {
+      "type": "object",
+      "properties": {
+        "maxOperationsPerFrame": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 20
+        },
+        "maxFramesPerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100
+        },
+        "maxNavigationsPerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10
+        }
+      }
+    },
+    "requireConfirmation": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Operation types that always require confirmation regardless of tier"
+    },
+    "auditLog": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to log all orchestration operations"
+    }
+  }
+}

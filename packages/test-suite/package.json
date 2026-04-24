@@ -1,0 +1,23 @@
+{
+  "name": "@h2a/test-suite",
+  "version": "0.1.0",
+  "description": "H2A Protocol — Conformance test suite",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "h2a-test": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@h2a/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  },
+  "license": "MIT"
+}

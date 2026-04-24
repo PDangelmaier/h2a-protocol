@@ -1,0 +1,13 @@
+{
+  "name": "h2a-protocol",
+  "private": true,
+  "workspaces": [
+    "packages/core",
+    "packages/mock-agent",
+    "packages/test-suite"
+  ],
+  "scripts": {
+    "build": "npm run -ws build",
+    "test": "npm run -ws test"
+  }
+}

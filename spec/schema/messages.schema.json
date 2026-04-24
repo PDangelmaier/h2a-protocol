@@ -1,0 +1,335 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://h2a-protocol.org/schema/messages.json",
+  "title": "H2A Messages",
+  "description": "All message types in the H2A protocol",
+
+  "$defs": {
+    "SessionOpen": {
+      "type": "object",
+      "required": ["type", "sessionId"],
+      "properties": {
+        "type": { "const": "session.open" },
+        "sessionId": { "type": "string" },
+        "resumeFrom": { "type": "string", "description": "Last received message ID for resume" },
+        "hostCapabilities": { "$ref": "#/$defs/HostCapabilities" },
+        "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+        "timezone": { "type": "string" }
+      }
+    },
+
+    "SessionAck": {
+      "type": "object",
+      "required": ["type", "sessionId"],
+      "properties": {
+        "type": { "const": "session.ack" },
+        "sessionId": { "type": "string" },
+        "negotiatedCapabilities": { "$ref": "#/$defs/NegotiatedCapabilities" }
+      }
+    },
+
+    "SessionResume": {
+      "type": "object",
+      "required": ["type", "sessionId", "lastReceivedSequence"],
+      "properties": {
+        "type": { "const": "session.resume" },
+        "sessionId": { "type": "string" },
+        "lastReceivedSequence": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "HostCapabilities": {
+      "type": "object",
+      "properties": {
+        "rendering": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "stateSync": { "type": "boolean", "default": false },
+        "orchestration": { "type": "boolean", "default": false },
+        "accessibility": {
+          "type": "object",
+          "properties": {
+            "screenReader": { "type": "boolean", "default": false },
+            "reducedMotion": { "type": "boolean", "default": false },
+            "voiceOnly": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    },
+
+    "NegotiatedCapabilities": {
+      "type": "object",
+      "properties": {
+        "frameTypes": { "type": "array", "items": { "type": "string" } },
+        "stateSync": { "type": "boolean" },
+        "orchestration": { "type": "boolean" },
+        "presence": { "type": "boolean" }
+      }
+    },
+
+    "StateSnapshot": {
+      "type": "object",
+      "required": ["type", "timestamp"],
+      "properties": {
+        "type": { "const": "state.snapshot" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "page": {
+          "type": "object",
+          "properties": {
+            "route": { "type": "string" },
+            "title": { "type": "string" },
+            "section": { "type": "string" }
+          }
+        },
+        "data": {
+          "type": "object",
+          "description": "Application-specific state, filtered by projections"
+        },
+        "user": {
+          "type": "object",
+          "properties": {
+            "activity": { "enum": ["typing", "idle", "scrolling", "selecting", "navigating"] },
+            "idleSeconds": { "type": "number", "minimum": 0 },
+            "focusedElement": { "type": "string" }
+          }
+        },
+        "voiceContext": {
+          "type": "object",
+          "description": "For voice-only hosts: replaces page/data",
+          "properties": {
+            "lastUtterance": { "type": "string" },
+            "conversationPhase": { "type": "string" },
+            "ambientNoise": { "enum": ["quiet", "moderate", "loud"] }
+          }
+        }
+      }
+    },
+
+    "StateDiff": {
+      "type": "object",
+      "required": ["type", "timestamp", "changes"],
+      "properties": {
+        "type": { "const": "state.diff" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["op", "path"],
+            "properties": {
+              "op": { "enum": ["add", "remove", "replace", "move", "copy", "test"] },
+              "path": { "type": "string" },
+              "value": {},
+              "from": { "type": "string" }
+            }
+          },
+          "description": "JSON Patch operations (RFC 6902)"
+        }
+      }
+    },
+
+    "AgentFrame": {
+      "type": "object",
+      "required": ["type", "id", "frameType"],
+      "properties": {
+        "type": { "const": "agent.frame" },
+        "id": { "type": "string" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "frameType": {
+          "type": "string",
+          "enum": ["text", "tool_card", "confirmation", "progress", "state_delta", "toast", "artifact", "component", "error", "end"]
+        },
+        "content": {
+          "description": "Frame-type-specific content"
+        },
+        "streaming": { "type": "boolean", "default": false },
+        "final": { "type": "boolean", "default": true },
+        "lang": { "type": "string", "description": "BCP 47 language tag for this frame" },
+        "fallbackText": { "type": "string", "description": "Text-only fallback for unsupported frame types" },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "interruptible": { "type": "boolean", "default": true },
+            "revertible": { "type": "boolean", "default": false },
+            "revertOperations": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/StateDeltaOperation" }
+            },
+            "presenceHint": { "type": "string" },
+            "narration": { "type": "string", "description": "Human-readable description of what agent is doing" }
+          }
+        }
+      }
+    },
+
+    "StateDeltaOperation": {
+      "type": "object",
+      "required": ["op", "target"],
+      "properties": {
+        "op": {
+          "enum": ["navigate", "fill", "click", "scroll", "focus", "blur", "select", "toggle", "wait", "notify"]
+        },
+        "target": { "type": "string", "description": "Abstract element identifier (not a CSS selector)" },
+        "value": { "description": "Operation-specific value" },
+        "timeout": { "type": "integer", "description": "Max wait time in ms for async operations" }
+      }
+    },
+
+    "TextContent": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "format": { "enum": ["plain", "markdown", "html"], "default": "markdown" }
+      }
+    },
+
+    "ToolCardContent": {
+      "type": "object",
+      "required": ["tool", "status"],
+      "properties": {
+        "tool": { "type": "string" },
+        "input": { "type": "object" },
+        "output": {},
+        "status": { "enum": ["running", "completed", "failed", "cancelled"] },
+        "duration": { "type": "number", "description": "Execution time in ms" }
+      }
+    },
+
+    "ConfirmationContent": {
+      "type": "object",
+      "required": ["action", "description"],
+      "properties": {
+        "action": { "type": "string" },
+        "description": { "type": "string" },
+        "tier": { "enum": ["autonomous", "confirmable", "restricted"] },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "default": { "type": "boolean" },
+              "destructive": { "type": "boolean" }
+            }
+          }
+        },
+        "timeout": { "type": "integer", "description": "Auto-deny after N seconds if no response" }
+      }
+    },
+
+    "ProgressContent": {
+      "type": "object",
+      "required": ["task"],
+      "properties": {
+        "task": { "type": "string" },
+        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "message": { "type": "string" },
+        "estimatedRemaining": { "type": "number", "description": "Estimated seconds remaining" }
+      }
+    },
+
+    "ToastContent": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string" },
+        "severity": { "enum": ["info", "success", "warning", "error"], "default": "info" },
+        "duration": { "type": "integer", "description": "Auto-dismiss after N ms. 0 = persistent", "default": 5000 },
+        "action": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string" },
+            "signalType": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "ArtifactContent": {
+      "type": "object",
+      "required": ["mimeType", "name"],
+      "properties": {
+        "mimeType": { "type": "string" },
+        "name": { "type": "string" },
+        "data": { "type": "string", "description": "Base64-encoded or URI" },
+        "uri": { "type": "string", "format": "uri" },
+        "size": { "type": "integer" }
+      }
+    },
+
+    "ErrorContent": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "SESSION_EXPIRED", "RATE_LIMITED", "ORCHESTRATION_DENIED",
+            "STATE_SYNC_ERROR", "AGENT_OVERLOADED", "UNSUPPORTED_FRAME",
+            "AUTHENTICATION_REQUIRED", "INTERNAL_ERROR"
+          ]
+        },
+        "message": { "type": "string" },
+        "retryAfter": { "type": "integer", "description": "Seconds before retry" },
+        "severity": { "enum": ["info", "warning", "error", "fatal"] }
+      }
+    },
+
+    "UserSignal": {
+      "type": "object",
+      "required": ["type", "signalType"],
+      "properties": {
+        "type": { "const": "user.signal" },
+        "signalType": {
+          "enum": ["message", "confirm", "deny", "interrupt", "redirect", "context_change", "feedback", "session_switch"]
+        },
+        "content": {
+          "description": "Signal-type-specific content"
+        },
+        "context": {
+          "type": "object",
+          "properties": {
+            "referencedFrames": { "type": "array", "items": { "type": "string" } },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "mimeType": { "type": "string" },
+                  "name": { "type": "string" },
+                  "data": { "type": "string" },
+                  "uri": { "type": "string", "format": "uri" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "PresenceUpdate": {
+      "type": "object",
+      "required": ["type", "state"],
+      "properties": {
+        "type": { "const": "presence.update" },
+        "state": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "trigger": { "type": "string", "description": "Why the agent entered this state" },
+        "suggestedAction": { "type": "string", "description": "Hint for the Host on how to respond" }
+      }
+    }
+  },
+
+  "oneOf": [
+    { "$ref": "#/$defs/SessionOpen" },
+    { "$ref": "#/$defs/SessionAck" },
+    { "$ref": "#/$defs/SessionResume" },
+    { "$ref": "#/$defs/StateSnapshot" },
+    { "$ref": "#/$defs/StateDiff" },
+    { "$ref": "#/$defs/AgentFrame" },
+    { "$ref": "#/$defs/UserSignal" },
+    { "$ref": "#/$defs/PresenceUpdate" }
+  ]
+}

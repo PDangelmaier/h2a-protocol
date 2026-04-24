@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://h2a-protocol.org/schema/health-check.json",
+  "title": "H2A Health Check Response",
+  "description": "Response format for GET /h2a/health (required for H2A Full conformance)",
+  "type": "object",
+  "required": ["status", "h2a", "agent"],
+  "properties": {
+    "status": {
+      "enum": ["healthy", "degraded", "unhealthy"],
+      "description": "Overall agent health status"
+    },
+    "h2a": {
+      "type": "string",
+      "description": "H2A protocol version"
+    },
+    "agent": {
+      "type": "object",
+      "required": ["name", "conformance"],
+      "properties": {
+        "name": { "type": "string" },
+        "conformance": { "enum": ["basic", "standard", "full"] },
+        "version": { "type": "string" }
+      }
+    },
+    "activeSessions": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of active H2A sessions"
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "enum": ["pass", "warn", "fail"] },
+          "message": { "type": "string" },
+          "latency": { "type": "number", "description": "Check latency in ms" }
+        }
+      },
+      "description": "Individual health checks (e.g., llm, database, memory)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "examples": [
+    {
+      "status": "healthy",
+      "h2a": "0.1",
+      "agent": { "name": "Atlas", "conformance": "full", "version": "1.2.0" },
+      "activeSessions": 12,
+      "checks": {
+        "llm": { "status": "pass", "latency": 230 },
+        "database": { "status": "pass", "latency": 5 },
+        "memory": { "status": "pass" }
+      },
+      "timestamp": "2026-04-20T10:30:00Z"
+    }
+  ]
+}

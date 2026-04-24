@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://h2a-protocol.org/schema/agent-card.json",
+  "title": "H2A AgentCard",
+  "description": "Describes an H2A agent's identity, capabilities, and endpoint",
+  "type": "object",
+  "required": ["h2a", "name", "capabilities", "endpoint"],
+  "properties": {
+    "h2a": {
+      "type": "string",
+      "description": "H2A protocol version",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable agent name",
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line description of the agent's purpose",
+      "maxLength": 500
+    },
+    "domain": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Domain tags for discovery and context"
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "personality": { "type": "string" },
+        "language": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+        "formality": { "enum": ["formal", "informal", "adaptive"] }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["streaming"],
+      "properties": {
+        "streaming": { "type": "boolean" },
+        "presence": { "type": "boolean", "default": false },
+        "stateObservation": { "type": "boolean", "default": false },
+        "uiOrchestration": { "type": "boolean", "default": false },
+        "multimodal": {
+          "type": "array",
+          "items": { "enum": ["text", "audio", "image", "video"] }
+        },
+        "interruptible": { "type": "boolean", "default": true }
+      }
+    },
+    "presence": {
+      "type": "object",
+      "properties": {
+        "states": {
+          "type": "array",
+          "items": { "type": "string" },
+          "contains": { "enum": ["rest", "attentive", "conversing", "orchestrating"] }
+        },
+        "defaultState": { "type": "string", "default": "rest" },
+        "custom": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["parent", "description"],
+            "properties": {
+              "parent": { "enum": ["rest", "attentive", "conversing", "orchestrating"] },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "frameTypes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Frame types this agent can produce"
+    },
+    "stateRequirements": {
+      "type": "object",
+      "properties": {
+        "required": { "type": "array", "items": { "type": "string" } },
+        "optional": { "type": "array", "items": { "type": "string" } },
+        "neverSend": { "type": "array", "items": { "type": "string" } },
+        "projections": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "maxSnapshotSize": { "type": "integer", "default": 8192 }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["h2a"],
+      "properties": {
+        "h2a": { "type": "string", "format": "uri" },
+        "agentCard": { "type": "string", "format": "uri" }
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "properties": {
+        "schemes": {
+          "type": "array",
+          "items": { "enum": ["bearer", "oauth2", "session_cookie", "api_key", "none"] }
+        }
+      }
+    }
+  }
+}
