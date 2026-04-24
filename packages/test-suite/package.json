@@ -1,24 +1,34 @@
 {
   "name": "@h2a/test-suite",
   "version": "0.1.0",
-  "description": "H2A Protocol — Conformance test suite",
+  "description": "H2A Protocol — 23 conformance tests across Basic, Standard, and Full levels",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "h2a-test": "dist/cli.js"
   },
+  "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@h2a/core": "workspace:*"
+    "@h2a/core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },
-  "license": "MIT"
+  "keywords": ["h2a", "conformance", "testing", "protocol"],
+  "license": "MIT",
+  "author": "The1ne <philipp@the1ne.de>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/The1ne/h2a-protocol.git",
+    "directory": "packages/test-suite"
+  },
+  "homepage": "https://github.com/The1ne/h2a-protocol",
+  "bugs": "https://github.com/The1ne/h2a-protocol/issues"
 }

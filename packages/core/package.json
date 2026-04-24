@@ -1,7 +1,7 @@
 {
   "name": "@h2a/core",
   "version": "0.1.0",
-  "description": "H2A Protocol — Core transport and message types",
+  "description": "H2A Protocol — Core transport, types, validation, presence, and sanitization",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,14 +11,22 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": ["h2a", "human-to-agent", "protocol", "ai", "agent"],
+  "keywords": ["h2a", "human-to-agent", "protocol", "ai", "agent", "mcp", "a2a", "sse", "streaming"],
   "license": "MIT",
+  "author": "The1ne <philipp@the1ne.de>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/The1ne/h2a-protocol.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/The1ne/h2a-protocol",
+  "bugs": "https://github.com/The1ne/h2a-protocol/issues",
   "devDependencies": {
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"

@@ -5,12 +5,29 @@ description = "H2A Protocol — Python server library for agent backends"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-keywords = ["h2a", "human-to-agent", "protocol", "ai", "agent"]
+keywords = ["h2a", "human-to-agent", "protocol", "ai", "agent", "mcp", "a2a", "sse"]
+authors = [{name = "The1ne", email = "philipp@the1ne.de"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = []
 
 [project.optional-dependencies]
 fastapi = ["fastapi>=0.100.0", "uvicorn>=0.20.0"]
 dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "ruff>=0.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/The1ne/h2a-protocol"
+Repository = "https://github.com/The1ne/h2a-protocol"
+Issues = "https://github.com/The1ne/h2a-protocol/issues"
+Documentation = "https://github.com/The1ne/h2a-protocol/tree/main/packages/python"
 
 [build-system]
 requires = ["hatchling"]

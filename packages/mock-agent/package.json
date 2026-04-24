@@ -1,13 +1,14 @@
 {
   "name": "@h2a/mock-agent",
   "version": "0.1.0",
-  "description": "H2A Protocol — Deterministic mock agent for testing",
+  "description": "H2A Protocol — Deterministic mock agent with 4 scenarios for testing",
   "type": "module",
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "bin": {
     "h2a-mock-agent": "dist/cli.js"
   },
+  "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli.js",
@@ -15,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@h2a/core": "workspace:*"
+    "@h2a/core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
@@ -23,5 +24,14 @@
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },
-  "license": "MIT"
+  "keywords": ["h2a", "mock", "testing", "agent"],
+  "license": "MIT",
+  "author": "The1ne <philipp@the1ne.de>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/The1ne/h2a-protocol.git",
+    "directory": "packages/mock-agent"
+  },
+  "homepage": "https://github.com/The1ne/h2a-protocol",
+  "bugs": "https://github.com/The1ne/h2a-protocol/issues"
 }

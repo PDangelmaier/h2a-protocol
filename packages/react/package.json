@@ -1,7 +1,7 @@
 {
   "name": "@h2a/react",
   "version": "0.1.0",
-  "description": "H2A Protocol — React SDK with hooks and components",
+  "description": "H2A Protocol — React SDK with H2AProvider, useH2A, usePresence, PresenceIndicator, H2AChat",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,13 +11,13 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@h2a/core": "workspace:*"
+    "@h2a/core": "^0.1.0"
   },
   "peerDependencies": {
     "react": ">=18.0.0"
@@ -28,5 +28,14 @@
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },
-  "license": "MIT"
+  "keywords": ["h2a", "react", "hooks", "agent", "presence", "chat"],
+  "license": "MIT",
+  "author": "The1ne <philipp@the1ne.de>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/The1ne/h2a-protocol.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/The1ne/h2a-protocol",
+  "bugs": "https://github.com/The1ne/h2a-protocol/issues"
 }
