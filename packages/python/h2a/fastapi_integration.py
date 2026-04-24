@@ -9,7 +9,7 @@ from h2a.agent import H2AAgent
 from h2a.types import SessionOpen, StateSnapshot
 
 
-def create_h2a_routes(agent: H2AAgent, prefix: str = "") -> Any:
+def create_h2a_routes(agent: H2AAgent, prefix: str = "", cors: bool = True) -> Any:
     """Create FastAPI router with H2A endpoints.
 
     Usage:
@@ -24,6 +24,21 @@ def create_h2a_routes(agent: H2AAgent, prefix: str = "") -> Any:
         raise ImportError("Install h2a[fastapi] for FastAPI integration") from e
 
     router = APIRouter(prefix=prefix)
+
+    if cors:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        @router.options("/{path:path}")
+        async def cors_preflight(request: Request) -> JSONResponse:
+            return JSONResponse(
+                {},
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, X-H2A-Session",
+                    "Access-Control-Expose-Headers": "X-H2A-Session",
+                },
+            )
 
     @router.get("/.well-known/h2a-agent.json")
     async def get_agent_card() -> JSONResponse:
