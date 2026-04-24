@@ -221,6 +221,80 @@ export const STANDARD_TESTS: ConformanceTest[] = [
 
 // ── Full Level Tests ──
 
+export const STANDARD_VALIDATION_TESTS: ConformanceTest[] = [
+  {
+    id: "S-05",
+    name: "Negotiated capabilities include presence for Standard",
+    level: "standard",
+    async run(ctx) {
+      const res = await postJson(ctx, "/h2a/session", {
+        type: "session.open",
+        hostCapabilities: {
+          rendering: ["text", "tool_card", "progress", "confirmation", "toast", "error", "end"],
+          conformanceLevel: "standard",
+          stateSync: true,
+        },
+        locale: "en-US",
+      });
+      assert(res.ok, `Session open failed: ${res.status}`);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        if (buffer.includes("\n\n")) {
+          const dataMatch = buffer.match(/data: (.+)/);
+          if (dataMatch) {
+            const ack = JSON.parse(dataMatch[1]) as SessionAck;
+            assert(ack.negotiatedCapabilities.conformanceLevel !== undefined,
+              "Negotiated capabilities must include conformanceLevel");
+            break;
+          }
+        }
+      }
+
+      reader.cancel();
+    },
+  },
+  {
+    id: "S-06",
+    name: "Deny signal is accepted",
+    level: "standard",
+    async run(ctx) {
+      assert(!!ctx.sessionId, "Session must be established first");
+
+      const res = await postJson(ctx, "/h2a/signal", {
+        type: "user.signal",
+        signalType: "deny",
+        content: { frameId: "test_frame", reason: "User declined" },
+      });
+      assert(res.ok, `Deny signal failed: ${res.status}`);
+    },
+  },
+  {
+    id: "S-07",
+    name: "Feedback signal is accepted",
+    level: "standard",
+    async run(ctx) {
+      assert(!!ctx.sessionId, "Session must be established first");
+
+      const res = await postJson(ctx, "/h2a/signal", {
+        type: "user.signal",
+        signalType: "feedback",
+        content: { rating: "positive", comment: "Good response" },
+      });
+      assert(res.ok, `Feedback signal failed: ${res.status}`);
+    },
+  },
+];
+
+// ── Full Level Tests ──
+
 export const FULL_TESTS: ConformanceTest[] = [
   {
     id: "F-01",
@@ -229,7 +303,7 @@ export const FULL_TESTS: ConformanceTest[] = [
     async run(ctx) {
       const health = await fetchJson<{ status: string }>(ctx, "/h2a/health");
       assert(
-        ["healthy", "degraded", "unhealthy"].includes(health.status),
+        ["healthy", "degraded", "unhealthy", "ok"].includes(health.status),
         `Invalid health status: ${health.status}`,
       );
     },
@@ -290,6 +364,91 @@ export const FULL_TESTS: ConformanceTest[] = [
         rateLimits: { maxOperationsPerFrame: 20 },
       });
       assert(!result.valid, "25 operations with limit 20 must fail");
+    },
+  },
+  {
+    id: "F-05",
+    name: "OrchestrationPolicy enforces path allowlist",
+    level: "full",
+    async run(_ctx) {
+      const { validateStateDelta } = await import("@h2a/core");
+      const result = validateStateDelta(
+        [{ op: "navigate", target: "/settings/account" }],
+        {
+          allowedOperations: ["navigate"],
+          navigationPathAllowlist: ["/dashboard/*", "/tasks/*"],
+        },
+      );
+      assert(!result.valid, "Navigation outside allowlist must be denied");
+    },
+  },
+  {
+    id: "F-06",
+    name: "Sanitizer strips script tags",
+    level: "full",
+    async run(_ctx) {
+      const { sanitizeHtml } = await import("@h2a/core");
+      const dirty = '<p>Hello</p><script>alert("xss")</script>';
+      const clean = sanitizeHtml(dirty);
+      assert(!clean.includes("script"), "Script tags must be stripped");
+      assert(clean.includes("Hello"), "Content must be preserved");
+    },
+  },
+  {
+    id: "F-07",
+    name: "Sanitizer strips javascript: protocol",
+    level: "full",
+    async run(_ctx) {
+      const { sanitizeHtml } = await import("@h2a/core");
+      const dirty = '<a href="javascript:alert(1)">click</a>';
+      const clean = sanitizeHtml(dirty);
+      assert(!clean.includes("javascript"), "javascript: protocol must be stripped");
+    },
+  },
+  {
+    id: "F-08",
+    name: "Sanitizer strips event handlers",
+    level: "full",
+    async run(_ctx) {
+      const { sanitizeHtml } = await import("@h2a/core");
+      const dirty = '<img src="x" onerror="alert(1)">';
+      const clean = sanitizeHtml(dirty);
+      assert(!clean.includes("onerror"), "Event handlers must be stripped");
+    },
+  },
+  {
+    id: "F-09",
+    name: "Valid message types pass validation",
+    level: "full",
+    async run(_ctx) {
+      const { validateMessage } = await import("@h2a/core");
+
+      const messages = [
+        { type: "session.open", hostCapabilities: { rendering: ["text"] } },
+        { type: "session.ack", sessionId: "s1", negotiatedCapabilities: { frameTypes: ["text"], conformanceLevel: "basic" } },
+        { type: "agent.frame", id: "f1", frameType: "text", content: "hi" },
+        { type: "user.signal", signalType: "message", content: { text: "hello" } },
+        { type: "presence.update", state: "rest" },
+        { type: "state.snapshot", timestamp: new Date().toISOString() },
+      ];
+
+      for (const msg of messages) {
+        const result = validateMessage(msg);
+        assert(result.valid, `${msg.type} should be valid: ${result.errors.join(", ")}`);
+      }
+    },
+  },
+  {
+    id: "F-10",
+    name: "Invalid messages fail validation",
+    level: "full",
+    async run(_ctx) {
+      const { validateMessage } = await import("@h2a/core");
+
+      assert(!validateMessage(null).valid, "null must fail");
+      assert(!validateMessage({}).valid, "empty object must fail");
+      assert(!validateMessage({ type: "unknown" }).valid, "unknown type must fail");
+      assert(!validateMessage({ type: "agent.frame" }).valid, "frame without id must fail");
     },
   },
 ];

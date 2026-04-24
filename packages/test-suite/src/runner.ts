@@ -1,7 +1,7 @@
 import type { ConformanceLevel } from "@h2a/core";
 import type { SuiteResult, TestResult } from "./index.js";
 import type { ConformanceTest, TestContext } from "./tests.js";
-import { BASIC_TESTS, STANDARD_TESTS, FULL_TESTS } from "./tests.js";
+import { BASIC_TESTS, STANDARD_TESTS, STANDARD_VALIDATION_TESTS, FULL_TESTS } from "./tests.js";
 
 export interface ConformanceSuiteOptions {
   endpoint: string;
@@ -16,9 +16,9 @@ function getTestsForLevel(level: ConformanceLevel): ConformanceTest[] {
     case "basic":
       return [...BASIC_TESTS];
     case "standard":
-      return [...BASIC_TESTS, ...STANDARD_TESTS];
+      return [...BASIC_TESTS, ...STANDARD_TESTS, ...STANDARD_VALIDATION_TESTS];
     case "full":
-      return [...BASIC_TESTS, ...STANDARD_TESTS, ...FULL_TESTS];
+      return [...BASIC_TESTS, ...STANDARD_TESTS, ...STANDARD_VALIDATION_TESTS, ...FULL_TESTS];
   }
 }
 

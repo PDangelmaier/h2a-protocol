@@ -93,12 +93,15 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.4(@types/node@25.6.0)(tsx@4.21.0)
+        version: 3.2.4(@types/node@20.19.39)(tsx@4.21.0)
 
   playground:
     dependencies:

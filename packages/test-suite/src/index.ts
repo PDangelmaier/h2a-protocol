@@ -20,4 +20,4 @@ export interface SuiteResult {
 }
 
 export { runConformanceSuite, type ConformanceSuiteOptions } from "./runner.js";
-export { BASIC_TESTS, STANDARD_TESTS, FULL_TESTS } from "./tests.js";
+export { BASIC_TESTS, STANDARD_TESTS, STANDARD_VALIDATION_TESTS, FULL_TESTS } from "./tests.js";
