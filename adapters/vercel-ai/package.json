@@ -1,0 +1,32 @@
+{
+  "name": "@h2a/vercel-ai",
+  "version": "0.1.0",
+  "description": "H2A adapter for Vercel AI SDK — use H2A agents with useChat/useCompletion",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": ["h2a", "vercel", "ai-sdk", "useChat", "adapter"],
+  "license": "MIT",
+  "dependencies": {
+    "@h2a/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "ai": ">=3.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  }
+}

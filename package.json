@@ -5,7 +5,9 @@
     "packages/core",
     "packages/react",
     "packages/mock-agent",
-    "packages/test-suite"
+    "packages/test-suite",
+    "adapters/vercel-ai",
+    "adapters/langgraph"
   ],
   "scripts": {
     "build": "npm run -ws build",
