@@ -1,6 +1,6 @@
 # @h2a/mock-agent
 
-Deterministic mock agent for testing [H2A Protocol](https://github.com/The1ne/h2a-protocol) integrations.
+Deterministic mock agent for testing [H2A Protocol](https://github.com/PDangelmaier/h2a-protocol) integrations.
 
 ## Install
 

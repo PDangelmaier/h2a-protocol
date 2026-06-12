@@ -1,6 +1,6 @@
 # @h2a/test-suite
 
-Conformance test suite for [H2A Protocol](https://github.com/The1ne/h2a-protocol) implementations.
+Conformance test suite for [H2A Protocol](https://github.com/PDangelmaier/h2a-protocol) implementations.
 
 23 tests across three conformance levels.
 

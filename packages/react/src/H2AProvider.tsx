@@ -41,6 +41,7 @@ export function H2AProvider({ endpoint, headers, autoConnect = false, children }
 
   const connect = useCallback(async () => {
     clientRef.current?.disconnect();
+    setError(null);
 
     const client = new H2AClient({
       endpoint,
@@ -57,13 +58,17 @@ export function H2AProvider({ endpoint, headers, autoConnect = false, children }
     });
 
     clientRef.current = client;
-    await client.connect({
-      type: "session.open",
-      hostCapabilities: {
-        rendering: ["text", "tool_card", "confirmation", "progress", "toast", "error", "end"],
-        conformanceLevel: "standard",
-      },
-    });
+    try {
+      await client.connect({
+        type: "session.open",
+        hostCapabilities: {
+          rendering: ["text", "tool_card", "confirmation", "progress", "toast", "error", "end"],
+          conformanceLevel: "standard",
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }, [endpoint, headers]);
 
   const disconnect = useCallback(() => {

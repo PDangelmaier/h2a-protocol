@@ -129,6 +129,7 @@ function detectScenario(text: string): Scenario | null {
   if (lower.startsWith("/stream") || lower.includes("slow")) return "slow-stream";
   if (lower.startsWith("/orchestrate") || lower.includes("orchestrat")) return "orchestrate";
   if (lower.startsWith("/error") || lower.includes("fail")) return "error";
+  if (lower.startsWith("/config") || lower.includes("mercedes") || lower.includes("eqs") || lower.includes("konfig")) return "configurator";
   return null;
 }
 

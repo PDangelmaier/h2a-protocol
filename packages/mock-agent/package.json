@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@h2a/core": "^0.1.0"
+    "@h2a/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
@@ -29,9 +29,9 @@
   "author": "The1ne <philipp@the1ne.de>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/The1ne/h2a-protocol.git",
+    "url": "https://github.com/PDangelmaier/h2a-protocol.git",
     "directory": "packages/mock-agent"
   },
-  "homepage": "https://github.com/The1ne/h2a-protocol",
-  "bugs": "https://github.com/The1ne/h2a-protocol/issues"
+  "homepage": "https://github.com/PDangelmaier/h2a-protocol",
+  "bugs": "https://github.com/PDangelmaier/h2a-protocol/issues"
 }

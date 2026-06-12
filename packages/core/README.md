@@ -1,6 +1,6 @@
 # @h2a/core
 
-Core SDK for the [H2A (Human-to-Agent) Protocol](https://github.com/The1ne/h2a-protocol).
+Core SDK for the [H2A (Human-to-Agent) Protocol](https://github.com/PDangelmaier/h2a-protocol).
 
 ## Install
 

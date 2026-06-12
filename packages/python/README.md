@@ -1,6 +1,6 @@
 # h2a
 
-Python server library for the [H2A (Human-to-Agent) Protocol](https://github.com/The1ne/h2a-protocol).
+Python server library for the [H2A (Human-to-Agent) Protocol](https://github.com/PDangelmaier/h2a-protocol).
 
 Build H2A-compliant agents in Python. Works with any frontend that speaks H2A.
 

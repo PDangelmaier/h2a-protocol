@@ -24,10 +24,10 @@ fastapi = ["fastapi>=0.100.0", "uvicorn>=0.20.0"]
 dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "ruff>=0.1.0"]
 
 [project.urls]
-Homepage = "https://github.com/The1ne/h2a-protocol"
-Repository = "https://github.com/The1ne/h2a-protocol"
-Issues = "https://github.com/The1ne/h2a-protocol/issues"
-Documentation = "https://github.com/The1ne/h2a-protocol/tree/main/packages/python"
+Homepage = "https://github.com/PDangelmaier/h2a-protocol"
+Repository = "https://github.com/PDangelmaier/h2a-protocol"
+Issues = "https://github.com/PDangelmaier/h2a-protocol/issues"
+Documentation = "https://github.com/PDangelmaier/h2a-protocol/tree/main/packages/python"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+/* ─── H2A Design System ─── */
+/* Adapted from Agent Teams UI — Midnight Slate palette */
+
+@theme {
+  /* Surface hierarchy */
+  --color-surface: #12131a;
+  --color-surface-raised: #1a1b26;
+  --color-surface-overlay: #1e2030;
+  --color-surface-sidebar: #0f1019;
+  --color-surface-code: #161722;
+
+  /* Borders */
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
+  --color-border-emphasis: rgba(255, 255, 255, 0.16);
+
+  /* Text */
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+
+  /* Accent — Indigo */
+  --color-accent: #818cf8;
+  --color-accent-hover: #a5b4fc;
+  --color-accent-dim: rgba(129, 140, 248, 0.12);
+
+  /* Semantic */
+  --color-success: #22c55e;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #06b6d4;
+
+  /* H2A Presence */
+  --color-presence-rest: #6b7280;
+  --color-presence-attentive: #3b82f6;
+  --color-presence-conversing: #10b981;
+  --color-presence-orchestrating: #8b5cf6;
+
+  /* H2A Frame accents */
+  --color-frame-text: #22c55e;
+  --color-frame-tool: #a855f7;
+  --color-frame-progress: #f97316;
+  --color-frame-confirmation: #eab308;
+  --color-frame-toast: #06b6d4;
+  --color-frame-error: #ef4444;
+  --color-frame-end: #6b7280;
+  --color-frame-artifact: #ec4899;
+
+  /* Scrollbar */
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --color-scrollbar-track: transparent;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Chat bubbles */
+  --color-bubble-agent: #1e2030;
+  --color-bubble-user: rgba(129, 140, 248, 0.15);
+}
+
+/* ─── Base ─── */
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--color-scrollbar-thumb); border-radius: 3px; }
+
+/* ─── Animations ─── */
+
+@keyframes h2a-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.25; }
+  50% { transform: scale(1.4); opacity: 0.5; }
+}
+
+@keyframes h2a-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes h2a-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+@keyframes h2a-orbit {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes h2a-pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.animate-fade-in { animation: h2a-fade-in 0.3s ease-out both; }
+.animate-shimmer { animation: h2a-shimmer 2s linear infinite; }
+
+/* Presence dot breathing */
+.presence-breathe { animation: h2a-breathe var(--breathe-duration, 4s) ease-in-out infinite; }
+
+/* Streaming text cursor */
+.streaming-cursor::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--color-accent);
+  margin-left: 2px;
+  animation: h2a-breathe 1s ease-in-out infinite;
+  vertical-align: text-bottom;
+}
+
+/* Orbit border for composer */
+.orbit-border {
+  background: linear-gradient(90deg, var(--color-accent), var(--color-presence-conversing), var(--color-accent));
+  background-size: 200% 100%;
+  animation: h2a-orbit 3s ease infinite;
+  padding: 1px;
+  border-radius: var(--radius-lg);
+}
+
+.orbit-border > * {
+  background: var(--color-surface-raised);
+  border-radius: calc(var(--radius-lg) - 1px);
+}

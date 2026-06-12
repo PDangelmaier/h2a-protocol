@@ -22,13 +22,13 @@
   "author": "The1ne <philipp@the1ne.de>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/The1ne/h2a-protocol.git",
+    "url": "https://github.com/PDangelmaier/h2a-protocol.git",
     "directory": "adapters/langgraph"
   },
-  "homepage": "https://github.com/The1ne/h2a-protocol",
-  "bugs": "https://github.com/The1ne/h2a-protocol/issues",
+  "homepage": "https://github.com/PDangelmaier/h2a-protocol",
+  "bugs": "https://github.com/PDangelmaier/h2a-protocol/issues",
   "dependencies": {
-    "@h2a/core": "^0.1.0"
+    "@h2a/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

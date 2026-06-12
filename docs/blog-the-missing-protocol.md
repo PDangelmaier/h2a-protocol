@@ -70,7 +70,7 @@ Each level is a strict superset of the one below. Every "Basic" agent works in e
 
 ## What Exists Today
 
-The [h2a-protocol](https://github.com/The1ne/h2a-protocol) repo contains:
+The [h2a-protocol](https://github.com/PDangelmaier/h2a-protocol) repo contains:
 
 - **Spec v0.1** with formal conformance levels, security addendum, test vectors, voice extension draft, and JSON schemas
 - **@h2a/core** — TypeScript SDK with client, server, presence state machine, validation, and sanitization

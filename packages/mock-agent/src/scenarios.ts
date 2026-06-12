@@ -1,6 +1,6 @@
 import type { H2ASession } from "@h2a/core";
 
-export type Scenario = "echo" | "slow-stream" | "orchestrate" | "error";
+export type Scenario = "echo" | "slow-stream" | "orchestrate" | "error" | "configurator";
 
 export interface ScenarioHandler {
   name: Scenario;
@@ -100,11 +100,61 @@ export const errorScenario: ScenarioHandler = {
   },
 };
 
+export const configuratorScenario: ScenarioHandler = {
+  name: "configurator" as Scenario,
+  description: "Mercedes-Benz UCP car configurator assistant — demonstrates commerce use case",
+  async handle(_session, text, send) {
+    const baseId = `cfg-${Date.now()}`;
+    send.presence("conversing", "user_message");
+
+    const words = `Willkommen beim Mercedes-Benz Konfigurator. Ich analysiere Ihre Anfrage...`.split(" ");
+    for (let i = 0; i < words.length; i++) {
+      send.text(`${baseId}-greet`, (i > 0 ? " " : "") + words[i], { streaming: true, final: i === words.length - 1 });
+      await sleep(80);
+    }
+    await sleep(300);
+
+    send.presence("orchestrating", "configuration_lookup");
+    send.toolCard(`${baseId}-lookup`, "configurator.lookup_model", "running", { query: text, market: "DE" });
+    send.progress(`${baseId}-prog`, "Modellsuche", 25, "Verfuegbare Modelle pruefen...");
+    await sleep(400);
+    send.progress(`${baseId}-prog`, "Modellsuche", 60, "Ausstattungspakete laden...");
+    await sleep(400);
+    send.toolCard(`${baseId}-lookup`, "configurator.lookup_model", "completed", { query: text }, {
+      model: "EQS 450+", line: "AMG Line", price: "ab 112.907 EUR",
+    });
+    send.progress(`${baseId}-prog`, "Modellsuche", 100, "Fertig");
+    await sleep(200);
+
+    send.confirmation(`${baseId}-confirm`, "configure_vehicle", "Soll ich eine EQS 450+ Konfiguration in AMG Line fuer Sie erstellen?", [
+      { id: "yes", label: "Konfiguration starten" },
+      { id: "compare", label: "Modelle vergleichen" },
+      { id: "no", label: "Abbrechen" },
+    ]);
+    await sleep(200);
+
+    send.presence("conversing", "awaiting_confirmation");
+    const result = `Fuer den **EQS 450+** in **AMG Line** empfehle ich folgende Highlights:\n\n`
+      + `- MBUX Hyperscreen\n- Hinterachslenkung 10°\n- Burmester 4D Surround\n- Fahrassistenz-Paket Plus\n\n`
+      + `Grundpreis: **112.907 EUR** — mit diesen Optionen ca. **128.400 EUR**.`;
+    const resultWords = result.split(" ");
+    for (let i = 0; i < resultWords.length; i++) {
+      send.text(`${baseId}-result`, (i > 0 ? " " : "") + resultWords[i], { streaming: true, final: i === resultWords.length - 1 });
+      await sleep(60);
+    }
+
+    send.toast(`${baseId}-toast`, "Konfiguration bereit", "success");
+    send.end(`${baseId}-end`);
+    send.presence("rest", "response_complete");
+  },
+};
+
 export const ALL_SCENARIOS: ScenarioHandler[] = [
   echoScenario,
   slowStreamScenario,
   orchestrateScenario,
   errorScenario,
+  configuratorScenario,
 ];
 
 export function getScenario(name: string): ScenarioHandler | undefined {
