@@ -27,13 +27,14 @@ export class H2AClient {
   private endpoint: string;
   private headers: Record<string, string>;
   private callbacks: Omit<H2AClientOptions, "endpoint" | "headers" | "maxFramesPerResponse" | "maxBytesPerResponse">;
-  private eventSource: EventSource | null = null;
+  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private sessionId: string | null = null;
   private lastSequence = 0;
   private frameCount = 0;
   private maxFrames: number;
   private maxBytes: number;
   private byteCount = 0;
+  private disconnected = false;
 
   constructor(options: H2AClientOptions) {
     this.endpoint = options.endpoint;
@@ -147,8 +148,9 @@ export class H2AClient {
   }
 
   disconnect(): void {
-    this.eventSource?.close();
-    this.eventSource = null;
+    this.disconnected = true;
+    this.reader?.cancel().catch(() => {});
+    this.reader = null;
   }
 
   get session(): string | null {
@@ -160,7 +162,9 @@ export class H2AClient {
   }
 
   private readSSEStream(body: ReadableStream<Uint8Array>): void {
+    this.disconnected = false;
     const reader = body.getReader();
+    this.reader = reader;
     const decoder = new TextDecoder();
     let buffer = "";
 
@@ -168,7 +172,7 @@ export class H2AClient {
       reader
         .read()
         .then(({ done, value }) => {
-          if (done) {
+          if (done || this.disconnected) {
             this.callbacks.onDisconnect();
             return;
           }
