@@ -99,3 +99,11 @@ export function formatToolsForNexus(tools: ToolDefinition[]): NexusToolSpec[] {
     },
   }))
 }
+
+const TOOL_MAX_TOKENS: Record<string, number> = {
+  vehicle_catalog: 3_000,
+}
+
+export function getToolMaxTokens(toolName: string): number {
+  return TOOL_MAX_TOKENS[toolName] ?? 1_500
+}

@@ -6,7 +6,8 @@ import { loadAgentMemories, persistMemory } from './memory.js'
 import { resolveModel } from './model-config.js'
 import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
-import { executeToolWithConsent, formatToolsForNexus, getAvailableTools } from './tools.js'
+import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
+import { truncateToolResult } from './truncation.js'
 
 interface SessionState {
   id: string
@@ -194,7 +195,9 @@ async function processResponse(
           ['ai_personalization'],
           supabase,
         )
-        return { toolUseId: call.id, content: [{ json: toolResult.data }] }
+        const maxTokens = getToolMaxTokens(call.name)
+        const truncated = truncateToolResult(toolResult.data, { maxTokens })
+        return { toolUseId: call.id, content: [{ json: truncated }] }
       }),
     )
 
