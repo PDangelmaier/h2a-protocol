@@ -1,6 +1,6 @@
 ---
 name: spec-pickup
-description: Startet die H2A-Arbeitsrunde nach PROCESS v2.1 — liest Decisions, Reviews und Specs vom Drive-Sync, arbeitet Review-Pflichtpunkte zuerst ab, macht den Spec-Check für PROPOSED-Specs und setzt die nächste startbare Spec um. Nutzen bei /spec-pickup.
+description: "H2A Arbeitsrunde starten: Reviews abarbeiten, Spec-Check, naechste Spec umsetzen (PROCESS v2.1)"
 ---
 
 # /spec-pickup v2 (PROCESS v2.1)
