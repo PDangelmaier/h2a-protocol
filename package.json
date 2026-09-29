@@ -6,6 +6,8 @@
     "packages/react",
     "packages/mock-agent",
     "packages/test-suite",
+    "packages/mb-agent",
+    "packages/mb-widget",
     "adapters/vercel-ai",
     "adapters/langgraph"
   ],
