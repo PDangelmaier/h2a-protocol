@@ -1,0 +1,27 @@
+[project]
+id = "h2a-mercedes"
+name = "H2A Mercedes-Benz Virtual Assistant"
+
+[db]
+port = 54322
+major_version = 15
+
+[db.pooler]
+enabled = true
+port = 54329
+pool_mode = "transaction"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+
+[auth]
+enabled = true
+site_url = "http://localhost:5200"
+
+[storage]
+enabled = false
+
+[realtime]
+enabled = true

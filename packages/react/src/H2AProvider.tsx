@@ -42,6 +42,7 @@ export function H2AProvider({ endpoint, headers, autoConnect = false, children }
   const connect = useCallback(async () => {
     clientRef.current?.disconnect();
     setError(null);
+    setFrames([]);
 
     const client = new H2AClient({
       endpoint,
@@ -92,9 +93,15 @@ export function H2AProvider({ endpoint, headers, autoConnect = false, children }
   const clearFrames = useCallback(() => setFrames([]), []);
 
   useEffect(() => {
-    if (autoConnect) { connect(); }
-    return () => { clientRef.current?.disconnect(); };
-  }, [autoConnect, connect]);
+    if (autoConnect) {
+      const timer = setTimeout(() => { connect(); }, 0);
+      return () => {
+        clearTimeout(timer);
+        clientRef.current?.disconnect();
+        clientRef.current = null;
+      };
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <H2AContext.Provider value={{ connected, sessionId, presence, frames, error, connect, disconnect, sendMessage, sendSignal, clearFrames }}>

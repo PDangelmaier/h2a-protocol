@@ -1,0 +1,25 @@
+{
+  "name": "@h2a/mb-agent",
+  "version": "0.1.0",
+  "description": "H2A Mercedes-Benz Virtual Assistant — Agent Backend",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@h2a/core": "workspace:*",
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0",
+    "tsx": "^4.0.0"
+  }
+}
