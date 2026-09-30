@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "build": "npm run -ws build",
-    "test": "npm run -ws test"
+    "test": "npm run -ws test",
+    "db:verify": "bash scripts/db-verify.sh"
   }
 }
