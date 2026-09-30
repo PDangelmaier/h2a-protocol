@@ -50,6 +50,11 @@ vi.mock('../truncation.js', () => ({
   truncateToolResult: vi.fn((data: unknown) => data),
 }))
 
+const mockLoadGrantedConsents = vi.fn().mockResolvedValue(['ai_personalization'])
+vi.mock('../consent.js', () => ({
+  loadGrantedConsents: (...args: unknown[]) => mockLoadGrantedConsents(...args),
+}))
+
 import { createClient } from '@supabase/supabase-js'
 import { reasoningLoop } from '../reasoning.js'
 
@@ -294,7 +299,9 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
     expect(result.response).toBe('Normale Antwort.')
   })
 
-  it('KNOWN-GAP INV-13: executeToolWithConsent receives hardcoded consents, not real consent_records', async () => {
+  it('AC-6 SPEC-032 (was KNOWN-GAP INV-13): executeToolWithConsent receives real consents from loadGrantedConsents', async () => {
+    mockLoadGrantedConsents.mockResolvedValueOnce(['vehicle_data', 'location_services'])
+
     mockNexusSync
       .mockResolvedValueOnce({
         text: '',
@@ -315,11 +322,13 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
 
     await reasoningLoop(session, signal, config)
 
+    expect(mockLoadGrantedConsents).toHaveBeenCalledWith('prof-1', expect.anything())
     expect(mockExecuteTool).toHaveBeenCalledWith(
       expect.objectContaining({ toolId: 'tc-c' }),
       'prof-1',
-      ['ai_personalization'],
+      ['vehicle_data', 'location_services'],
       expect.anything(),
+      'de-DE',
     )
   })
 })

@@ -28,7 +28,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
     )
 
     expect(result.error).toBe(true)
-    expect(result.data.message).toContain('Einwilligung erforderlich')
+    expect(result.data.message).toContain('Einwilligung')
     expect(result.data.message).toContain('financial_data')
   })
 

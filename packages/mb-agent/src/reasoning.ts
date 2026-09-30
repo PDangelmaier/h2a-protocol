@@ -9,6 +9,7 @@ import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
 import { truncateToolResult } from './truncation.js'
+import { loadGrantedConsents } from './consent.js'
 
 interface SessionState {
   id: string
@@ -52,7 +53,7 @@ export async function reasoningLoop(
   const tools = await getAvailableTools(context, supabase)
   const nexusRequest = await buildNexusRequest(session, signal, personality.systemPrompt, personality.temperature, tools, supabase)
 
-  const response = await processResponse(nexusRequest, config.nexus, session.profileId, supabase)
+  const response = await processResponse(nexusRequest, config.nexus, session.profileId, session.locale, supabase)
 
   const turnId = crypto.randomUUID()
   persistTurn(session, signal, response, intent, supabase).catch((err: unknown) => {
@@ -180,11 +181,13 @@ async function processResponse(
   request: NexusRequest,
   nexusConfig: NexusConfig,
   profileId: string,
+  locale: string,
   supabase: SupabaseClient,
 ): Promise<ProcessedResponse> {
   const toolsUsed: string[] = []
   const newMemories: string[] = []
   let currentRequest = request
+  const grantedConsents = await loadGrantedConsents(profileId, supabase)
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const result = await callNexusSync(currentRequest, nexusConfig)
@@ -199,8 +202,9 @@ async function processResponse(
         const toolResult = await executeToolWithConsent(
           { toolId: call.id, input: call.input },
           profileId,
-          ['ai_personalization'],
+          grantedConsents,
           supabase,
+          locale,
         )
         const maxTokens = getToolMaxTokens(call.name)
         const truncated = truncateToolResult(toolResult.data, { maxTokens })
