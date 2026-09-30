@@ -26,9 +26,11 @@ vi.mock('../model-config.js', () => ({
   resolveModel: vi.fn().mockResolvedValue('claude-sonnet-4-6'),
 }))
 
+const mockTrackPersistFailed = vi.fn().mockResolvedValue(undefined)
 vi.mock('../langfuse.js', () => ({
   trackModelSwitch: vi.fn(),
   trackMissingPin: vi.fn(),
+  trackPersistTurnFailed: (...args: unknown[]) => mockTrackPersistFailed(...args),
 }))
 
 const mockNexusSync = vi.fn()
@@ -205,7 +207,92 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
     expect(vi.mocked(truncateToolResult)).toHaveBeenCalled()
   })
 
-  it.todo('KNOWN-GAP INV-14: persistTurn is awaited in response path without try-catch — a DB error would propagate to caller')
+  it('AC-1 SPEC-030: response returns before persistTurn completes', async () => {
+    let persistResolved = false
+    const mockFrom = vi.mocked(createClient('', '')).from as ReturnType<typeof vi.fn>
+    const originalMock = mockFrom.getMockImplementation()
+
+    const delayedChain: Record<string, unknown> = {}
+    const methods = ['select', 'insert', 'update', 'delete', 'eq', 'neq', 'gte', 'order', 'limit', 'in', 'is']
+    for (const m of methods) delayedChain[m] = vi.fn().mockReturnValue(delayedChain)
+    delayedChain.single = vi.fn().mockResolvedValue({ data: { display_name: 'Max', turn_count: 0 }, error: null })
+    delayedChain.maybeSingle = vi.fn().mockImplementation(() => {
+      return new Promise(resolve => {
+        setTimeout(() => {
+          persistResolved = true
+          resolve({ data: { id: 'conv-1', turn_count: 0 }, error: null })
+        }, 200)
+      })
+    })
+    mockFrom.mockReturnValue(delayedChain)
+
+    mockNexusSync.mockResolvedValueOnce({
+      text: 'Schnelle Antwort.',
+      toolCalls: [],
+      stopReason: 'end_turn',
+      inputTokens: 10,
+      outputTokens: 5,
+    })
+
+    const result = await reasoningLoop(session, signal, config)
+    expect(result.response).toBe('Schnelle Antwort.')
+    expect(persistResolved).toBe(false)
+
+    if (originalMock) mockFrom.mockImplementation(originalMock)
+  })
+
+  it('AC-2 SPEC-030: persistTurn error is caught and tracked via Langfuse', async () => {
+    const mockFrom = vi.mocked(createClient('', '')).from as ReturnType<typeof vi.fn>
+    const originalMock = mockFrom.getMockImplementation()
+
+    const errorChain: Record<string, unknown> = {}
+    const methods = ['select', 'insert', 'update', 'delete', 'eq', 'neq', 'gte', 'order', 'limit', 'in', 'is']
+    for (const m of methods) errorChain[m] = vi.fn().mockReturnValue(errorChain)
+    errorChain.single = vi.fn().mockResolvedValue({ data: { display_name: 'Max', turn_count: 0 }, error: null })
+    errorChain.maybeSingle = vi.fn().mockRejectedValue(new Error('DB connection lost'))
+    mockFrom.mockReturnValue(errorChain)
+
+    mockNexusSync.mockResolvedValueOnce({
+      text: 'Antwort trotz DB-Fehler.',
+      toolCalls: [],
+      stopReason: 'end_turn',
+      inputTokens: 10,
+      outputTokens: 5,
+    })
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await reasoningLoop(session, signal, config)
+    expect(result.response).toBe('Antwort trotz DB-Fehler.')
+
+    await vi.waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('persistTurn'))
+    }, { timeout: 1000 })
+
+    await vi.waitFor(() => {
+      expect(mockTrackPersistFailed).toHaveBeenCalledWith(
+        'sess-1',
+        expect.any(String),
+        'DB connection lost',
+      )
+    }, { timeout: 1000 })
+
+    consoleSpy.mockRestore()
+    if (originalMock) mockFrom.mockImplementation(originalMock)
+  })
+
+  it('AC-3 SPEC-030 (was INV-14 KNOWN-GAP): persistTurn does not block response path', async () => {
+    mockNexusSync.mockResolvedValueOnce({
+      text: 'Normale Antwort.',
+      toolCalls: [],
+      stopReason: 'end_turn',
+      inputTokens: 10,
+      outputTokens: 5,
+    })
+
+    const result = await reasoningLoop(session, signal, config)
+    expect(result.response).toBe('Normale Antwort.')
+  })
 
   it('KNOWN-GAP INV-13: executeToolWithConsent receives hardcoded consents, not real consent_records', async () => {
     mockNexusSync
