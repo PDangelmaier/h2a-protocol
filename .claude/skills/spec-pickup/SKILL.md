@@ -16,7 +16,7 @@ Die Regeln stehen im Abschnitt "H2A Spec-Driven-Prozess" in CLAUDE.md. Dieser Sk
 
 ## 2. Reihenfolge der Arbeit
 1. Review-Pflichtpunkte (`must_fix`, `must_before_merge`) — immer zuerst.
-2. Merges, die per REVIEW freigegeben sind (`status_after: DONE`, `merge_allowed` nicht false) — in Freigabe-Reihenfolge, danach rebasen + Gesamtsuite + CODEMAP.
+2. Merges, die per REVIEW freigegeben sind (`status_after: DONE`, `merge_allowed` nicht false) — Branch pushen, PR öffnen, auf Label `merge-allowed` warten (CC setzt es nie selbst). Nach Merge: rebasen + Gesamtsuite + CODEMAP.
 3. Spec-Check für alle Specs mit Status PROPOSED.
 4. Umsetzung READY-Specs: priority, dann depends_on (nur DONE + gemergt zählt), Hotspot-Regel, WIP-Limit.
 

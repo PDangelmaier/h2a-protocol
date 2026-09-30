@@ -1,0 +1,21 @@
+name: merge-gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+jobs:
+  merge-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for merge-allowed label
+        env:
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "$PR_LABELS" | grep -q '"merge-allowed"'; then
+            echo "Label 'merge-allowed' found. Merge permitted."
+          else
+            echo "::error::PR does not have the 'merge-allowed' label. Only PO or CA may add it."
+            exit 1
+          fi
