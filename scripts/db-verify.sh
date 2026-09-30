@@ -12,8 +12,12 @@ MIGRATIONS_DIR="$PROJECT_ROOT/supabase/migrations"
 SEEDS_DIR="$PROJECT_ROOT/supabase/seed"
 
 cleanup() {
-  echo "Cleaning up..."
-  docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+  if [ "${KEEP_CONTAINER:-}" = "1" ]; then
+    echo "Container $CONTAINER_NAME kept alive (KEEP_CONTAINER=1)."
+  else
+    echo "Cleaning up..."
+    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -63,15 +67,15 @@ FAIL_COUNT=0
 PASS_COUNT=0
 
 echo ""
-echo "--- Migrations ---"
+echo "--- Migrations (single-transaction per file, like Supabase) ---"
 for migration in $(ls "$MIGRATIONS_DIR"/*.sql | sort); do
   fname=$(basename "$migration")
-  if $PSQL < "$migration" >/dev/null 2>&1; then
+  if $PSQL -1 < "$migration" >/dev/null 2>&1; then
     echo "  ok   $fname"
     ((PASS_COUNT++))
   else
     echo "  FAIL $fname"
-    $PSQL < "$migration" 2>&1 | grep -i "error\|hint" | head -3 || true
+    $PSQL -1 < "$migration" 2>&1 | grep -i "error\|hint" | head -3 || true
     ((FAIL_COUNT++))
   fi
 done
@@ -80,12 +84,12 @@ echo ""
 echo "--- Seeds ---"
 for seed in $(ls "$SEEDS_DIR"/*.sql 2>/dev/null | sort); do
   fname=$(basename "$seed")
-  if $PSQL < "$seed" >/dev/null 2>&1; then
+  if $PSQL -1 < "$seed" >/dev/null 2>&1; then
     echo "  ok   $fname"
     ((PASS_COUNT++))
   else
     echo "  FAIL $fname"
-    $PSQL < "$seed" 2>&1 | grep -i "error\|hint" | head -3 || true
+    $PSQL -1 < "$seed" 2>&1 | grep -i "error\|hint" | head -3 || true
     ((FAIL_COUNT++))
   fi
 done
