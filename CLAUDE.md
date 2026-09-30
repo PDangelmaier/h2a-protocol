@@ -43,6 +43,13 @@ Zeitstempel ausschließlich: `TZ=Europe/Berlin date -Iseconds`.
 | Security, Secrets, destruktive DB-Operation außerhalb lokal | STOPP, PO fragen |
 | Entscheidungsvorlage | immer mit `timeout_allowed: true/false`; true nur, wenn Produktionsverhalten unverändert bleibt |
 
+### Merge-Ablauf (SPEC-034, INV-34)
+1. Arbeit auf Feature-Branch, nie direkt auf main.
+2. PR gegen main öffnen → CI läuft automatisch (`tests`, `db-verify`, `merge-gate`).
+3. CC wartet auf Label `merge-allowed` — **CC setzt dieses Label nie selbst**. Nur PO oder CA.
+4. Nach Label + grünen Checks: Merge per PR (Squash oder Merge-Commit nach Präferenz).
+5. Nach Merge: andere Branches rebasen, CODEMAP aktualisieren.
+
 ### Hooks (Pflicht)
 - `scope-check` (pre-commit): geänderte Dateien gegen scope_paths der aktiven Spec; außerhalb → Commit nur mit Vermerk.
 - `ac-check` (pre-push): Anzahl und IDs der AC in Spec und `journal/SPEC-NNN.md` müssen übereinstimmen; jedes AC hat einen Testnamen.

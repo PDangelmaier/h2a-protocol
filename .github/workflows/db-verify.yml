@@ -1,0 +1,88 @@
+name: db-verify
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+
+jobs:
+  db-verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: h2a_verify
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: verify_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d h2a_verify"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase stubs
+        run: |
+          PGPASSWORD=verify_pass psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS vector;
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
+              CREATE ROLE authenticated NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
+              CREATE ROLE anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
+              CREATE ROLE service_role NOLOGIN;
+            END IF;
+          END $$;
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid AS $f$
+            SELECT '00000000-0000-0000-0000-000000000000'::uuid;
+          $f$ LANGUAGE sql STABLE;
+          SQL
+
+      - name: Run migrations
+        run: |
+          FAIL=0
+          for migration in $(ls supabase/migrations/*.sql | sort); do
+            fname=$(basename "$migration")
+            if PGPASSWORD=verify_pass psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -1 < "$migration" >/dev/null 2>&1; then
+              echo "  ok   $fname"
+            else
+              echo "  FAIL $fname"
+              PGPASSWORD=verify_pass psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -1 < "$migration" 2>&1 | grep -i "error\|hint" | head -3 || true
+              FAIL=$((FAIL + 1))
+            fi
+          done
+          if [ "$FAIL" -gt 0 ]; then
+            echo "FAIL: $FAIL migration(s) failed."
+            exit 1
+          fi
+
+      - name: Run seeds
+        run: |
+          FAIL=0
+          for seed in $(ls supabase/seed/*.sql 2>/dev/null | sort); do
+            fname=$(basename "$seed")
+            if PGPASSWORD=verify_pass psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -1 < "$seed" >/dev/null 2>&1; then
+              echo "  ok   $fname"
+            else
+              echo "  FAIL $fname"
+              PGPASSWORD=verify_pass psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -1 < "$seed" 2>&1 | grep -i "error\|hint" | head -3 || true
+              FAIL=$((FAIL + 1))
+            fi
+          done
+          if [ "$FAIL" -gt 0 ]; then
+            echo "FAIL: $FAIL seed(s) failed."
+            exit 1
+          fi
+          echo "ALL PASSED"
