@@ -1,4 +1,5 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from '@supabase/supabase-js'
+import { reasoningLoop } from '@h2a/mb-agent'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -141,7 +142,7 @@ async function handleStream(req: Request): Promise<Response> {
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, customer_id, channel, journey_phase, intent_score, active_personality_id')
+    .select('id, customer_id, channel, journey_phase, intent_score')
     .eq('h2a_session_id', sessionId)
     .eq('status', 'active')
     .single()
@@ -150,7 +151,7 @@ async function handleStream(req: Request): Promise<Response> {
 
   const { data: profile } = await supabase
     .from('customer_profiles')
-    .select('display_name, pid_score, locale')
+    .select('display_name, pid_score, locale, market')
     .eq('id', session.customer_id)
     .single()
 
@@ -161,81 +162,62 @@ async function handleStream(req: Request): Promise<Response> {
     .order('sequence', { ascending: true })
     .limit(20)
 
-  const history = (recentTurns ?? []).map(t => ({
-    role: t.role as string,
-    content: [{ text: typeof t.content === 'string' ? t.content : JSON.stringify(t.content) }],
+  const conversationHistory = (recentTurns ?? []).map(t => ({
+    role: t.role as 'user' | 'assistant',
+    content: typeof t.content === 'string' ? t.content : (t.content as { text?: string })?.text ?? JSON.stringify(t.content),
   }))
 
-  const systemPrompt = buildMinimalSystemPrompt(
-    profile?.display_name,
-    profile?.locale ?? 'de-AT',
-    session.channel,
-    session.journey_phase,
-    profile?.pid_score ?? 0,
-  )
-
-  const nexusBody = {
-    system: [{ text: systemPrompt }],
-    messages: [
-      ...history,
-      { role: 'user', content: [{ text: body.text ?? '' }] },
-    ],
-    inferenceConfig: { temperature: 0.3, maxTokens: 2048 },
+  const sessionState = {
+    id: session.id,
+    profileId: session.customer_id ?? '',
+    channel: (session.channel ?? 'web') as 'web' | 'smart_storefront' | 'whatsapp' | 'mbux' | 'voice' | 'app' | 'dealer',
+    locale: profile?.locale ?? 'de-AT',
+    market: profile?.market ?? 'de',
+    journeyPhase: (session.journey_phase ?? 'awareness') as 'awareness' | 'research' | 'configuration' | 'pricing' | 'purchase' | 'order' | 'onboarding' | 'ownership' | 'service' | 'lifecycle',
+    pidScore: profile?.pid_score ?? 0,
+    conversationHistory,
   }
 
-  const mainModelId = await resolveActiveModel('main', supabase)
-  const nexusResponse = await fetch(`${NEXUS_ENDPOINT}/model/${mainModelId}/converse-stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${NEXUS_TOKEN}`,
+  const agentConfig = {
+    supabaseUrl: SUPABASE_URL,
+    supabaseServiceKey: SUPABASE_SERVICE_KEY,
+    nexus: {
+      endpoint: NEXUS_ENDPOINT,
+      bearerToken: NEXUS_TOKEN,
+      defaultModel: 'claude-sonnet-4-6',
+      fallbackModel: 'claude-haiku-4-5',
     },
-    body: JSON.stringify(nexusBody),
-  })
-
-  if (!nexusResponse.ok) {
-    const errText = await nexusResponse.text()
-    return jsonResponse({ error: `Nexus error: ${errText}` }, nexusResponse.status)
+    market: profile?.market ?? 'de',
+    defaultLocale: profile?.locale ?? 'de-AT',
   }
 
+  const userSignal = {
+    type: 'message',
+    content: body.text ?? '',
+    timestamp: new Date(),
+  }
+
+  const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
-      const reader = nexusResponse.body!.getReader()
-      const encoder = new TextEncoder()
-      const decoder = new TextDecoder()
-      let fullText = ''
-      let sequence = (recentTurns?.length ?? 0) + 1
-
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'presence.update', state: 'conversing' })}\n\n`))
 
       try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
+        const result = await reasoningLoop(sessionState, userSignal, agentConfig)
 
-          const chunk = decoder.decode(value, { stream: true })
-          const textDelta = extractTextDelta(chunk)
-          if (textDelta) {
-            fullText += textDelta
-            const frame = {
-              type: 'agent.frame',
-              frameType: 'text',
-              content: { text: textDelta, streaming: true },
-            }
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
-          }
+        const frame = {
+          type: 'agent.frame',
+          frameType: 'text',
+          content: { text: result.response, streaming: false },
         }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
 
-        const endFrame = { type: 'agent.frame', frameType: 'end', content: {} }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(endFrame)}\n\n`))
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'agent.frame', frameType: 'end', content: {} })}\n\n`))
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'presence.update', state: 'attentive' })}\n\n`))
-
-        await persistStreamedTurn(supabase, session.id, body.text ?? '', fullText, sequence)
       } catch (err) {
         const errFrame = { type: 'agent.frame', frameType: 'error', content: { message: String(err) } }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(errFrame)}\n\n`))
       } finally {
-        reader.releaseLock()
         controller.close()
       }
     },
@@ -251,110 +233,6 @@ async function handleStream(req: Request): Promise<Response> {
   })
 }
 
-function buildMinimalSystemPrompt(
-  displayName: string | null | undefined,
-  locale: string,
-  channel: string,
-  journeyPhase: string,
-  pidScore: number,
-): string {
-  const parts = [
-    'Du bist der Mercedes-Benz Assistent. Freundlich, kompetent, markentreu.',
-    `Sprache: ${locale}. Kanal: ${channel}. Journey-Phase: ${journeyPhase}. PID: ${pidScore}/100.`,
-  ]
-  if (displayName) parts.push(`Anrede: ${displayName}.`)
-  parts.push(
-    'Regeln: Keine erfundenen Preise. Bei Unsicherheit an Händler verweisen. DSGVO einhalten.',
-  )
-  return parts.join('\n')
-}
-
-function extractTextDelta(chunk: string): string | null {
-  const lines = chunk.split('\n').filter(l => l.startsWith('{'))
-  let text = ''
-  for (const line of lines) {
-    try {
-      const event = JSON.parse(line)
-      if (event.delta?.text) text += event.delta.text
-      if (event.contentBlockDelta?.delta?.text) text += event.contentBlockDelta.delta.text
-    } catch { /* incomplete JSON, skip */ }
-  }
-  return text || null
-}
-
-async function persistStreamedTurn(
-  supabase: ReturnType<typeof createClient>,
-  sessionId: string,
-  userText: string,
-  assistantText: string,
-  sequence: number,
-): Promise<void> {
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('id')
-    .eq('id', sessionId)
-    .single()
-  if (!session) return
-
-  let conversationId: string
-
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('h2a_session_id', sessionId)
-    .limit(1)
-    .maybeSingle()
-
-  if (existing) {
-    conversationId = existing.id
-  } else {
-    const { data: conv } = await supabase
-      .from('conversations')
-      .insert({ h2a_session_id: sessionId, profile_id: session.id, channel: 'web' })
-      .select('id')
-      .single()
-    conversationId = conv!.id
-  }
-
-  await supabase.from('conversation_turns').insert([
-    {
-      conversation_id: conversationId,
-      session_id: sessionId,
-      role: 'user',
-      content: { text: userText },
-      sequence,
-    },
-    {
-      conversation_id: conversationId,
-      session_id: sessionId,
-      role: 'assistant',
-      content: { text: assistantText },
-      sequence: sequence + 1,
-    },
-  ])
-
-  await supabase
-    .from('conversations')
-    .update({ turn_count: sequence + 1 })
-    .eq('id', conversationId)
-}
-
-type ModelPurpose = 'main' | 'tool-routing' | 'memory-extraction' | 'evaluation'
-
-async function resolveActiveModel(
-  purpose: ModelPurpose,
-  supabase: ReturnType<typeof createClient>,
-): Promise<string> {
-  const { data, error } = await supabase
-    .from('model_config')
-    .select('model_id')
-    .eq('purpose', purpose)
-    .eq('is_active', true)
-    .single()
-
-  if (error || !data) throw new Error(`No active model for purpose "${purpose}"`)
-  return data.model_id
-}
 
 async function verifyAdminIdentity(req: Request): Promise<{ identity: string } | { error: string; status: 401 | 403 }> {
   const auth = req.headers.get('authorization')

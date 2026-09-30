@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@h2a/mb-agent": "../../packages/mb-agent/src/index.ts",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+  }
+}

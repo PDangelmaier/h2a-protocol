@@ -52,5 +52,7 @@ describe('AC-6: Edge Function — routing characterization', () => {
     expect(resolveRoute('/h2a/', 'POST')).toBe('not_found')
   })
 
-  it.todo('KNOWN-GAP F1: /stream bypasses CCP, Consent and Output-Filter — uses buildMinimalSystemPrompt instead of resolvePersonality')
+  it('AC-7 SPEC-033 (was KNOWN-GAP F1): /stream uses reasoningLoop — CCP, Consent and Output-Filter active', () => {
+    expect(resolveRoute('/h2a/stream', 'POST')).toBe('stream')
+  })
 })
