@@ -3,32 +3,46 @@ name: db-verify
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'supabase/**'
 
 jobs:
   db-verify:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: h2a_verify
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: verify_pass
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d h2a_verify"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for supabase changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -q '^supabase/'; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No supabase/ changes — skipping db-verify."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Start PostgreSQL
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          docker run -d --name pg-verify \
+            -e POSTGRES_DB=h2a_verify \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=verify_pass \
+            -p 5432:5432 \
+            --health-cmd "pg_isready -U postgres -d h2a_verify" \
+            --health-interval 5s \
+            --health-timeout 5s \
+            --health-retries 10 \
+            pgvector/pgvector:pg16
+          until docker inspect --format='{{.State.Health.Status}}' pg-verify | grep -q healthy; do sleep 2; done
 
       - name: Setup Supabase stubs
+        if: steps.changes.outputs.has_changes == 'true'
         run: |
           PGPASSWORD=verify_pass psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 <<'SQL'
           CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -51,6 +65,7 @@ jobs:
           SQL
 
       - name: Run migrations
+        if: steps.changes.outputs.has_changes == 'true'
         run: |
           FAIL=0
           for migration in $(ls supabase/migrations/*.sql | sort); do
@@ -69,6 +84,7 @@ jobs:
           fi
 
       - name: Run seeds
+        if: steps.changes.outputs.has_changes == 'true'
         run: |
           FAIL=0
           for seed in $(ls supabase/seed/*.sql 2>/dev/null | sort); do
