@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+"$REPO_ROOT/.claude/hooks/main-guard.sh"
 "$REPO_ROOT/.claude/hooks/scope-check.sh"
 "$REPO_ROOT/.claude/hooks/migration-check.sh"
