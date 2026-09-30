@@ -3,6 +3,7 @@ import type { AgentConfig, CustomerContext, IntentSnapshot, NexusConfig } from '
 import { buildSystemPrompt, resolvePersonality } from './ccp.js'
 import { computeIntentScore, scoreToProactivity } from './isp.js'
 import { loadAgentMemories, persistMemory } from './memory.js'
+import { trackPersistTurnFailed } from './langfuse.js'
 import { resolveModel } from './model-config.js'
 import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
@@ -52,7 +53,13 @@ export async function reasoningLoop(
   const nexusRequest = await buildNexusRequest(session, signal, personality.systemPrompt, personality.temperature, tools, supabase)
 
   const response = await processResponse(nexusRequest, config.nexus, session.profileId, supabase)
-  await persistTurn(session, signal, response, intent, supabase)
+
+  const turnId = crypto.randomUUID()
+  persistTurn(session, signal, response, intent, supabase).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[persistTurn] session=${session.id} turn=${turnId}: ${msg}`)
+    trackPersistTurnFailed(session.id, turnId, msg).catch(() => {})
+  })
 
   return {
     response: response.text,
