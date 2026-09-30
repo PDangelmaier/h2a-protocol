@@ -1,4 +1,4 @@
-INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, endpoint_url, massp4ai_id, input_schema, requires_consent, allowed_channels, min_pid_score, is_active) VALUES
+INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, endpoint_url, massp4ai_id, input_schema, requires_consent, allowed_channels, min_pid_score, is_active, risk_level) VALUES
 (
   'vehicle_catalog',
   'Fahrzeugkatalog',
@@ -10,7 +10,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{}',
   '{web,smart_storefront,whatsapp,mbux,voice,app,dealer}',
   0,
-  true
+  true,
+  'normal'
 ),
 (
   'configurator',
@@ -23,7 +24,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{ai_personalization}',
   '{web,smart_storefront,app,dealer}',
   0,
-  true
+  true,
+  'normal'
 ),
 (
   'financing_calculator',
@@ -33,10 +35,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/financing',
   'mb-financing-v1',
   '{"type": "object", "properties": {"vehicle_price_cents": {"type": "integer", "description": "Fahrzeugpreis in Cent"}, "down_payment_cents": {"type": "integer", "description": "Anzahlung in Cent"}, "term_months": {"type": "integer", "enum": [24, 36, 48, 60]}, "financing_type": {"type": "string", "enum": ["leasing", "financing", "balloon"]}, "annual_mileage_km": {"type": "integer", "description": "Jaehrliche Fahrleistung in km (nur Leasing)"}}, "required": ["vehicle_price_cents", "term_months", "financing_type"]}',
-  '{ai_personalization}',
+  '{data_processing}',
   '{web,smart_storefront,whatsapp,app,dealer}',
   10,
-  true
+  true,
+  'normal'
 ),
 (
   'dealer_inventory',
@@ -46,10 +49,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/inventory',
   'mb-inventory-v1',
   '{"type": "object", "properties": {"model_id": {"type": "string"}, "location": {"type": "object", "properties": {"latitude": {"type": "number"}, "longitude": {"type": "number"}, "radius_km": {"type": "integer", "default": 50}}}, "dealer_id": {"type": "string"}, "max_results": {"type": "integer", "default": 10}}, "required": ["model_id"]}',
-  '{}',
+  '{location_services}',
   '{web,smart_storefront,whatsapp,app,dealer}',
   0,
-  true
+  true,
+  'normal'
 ),
 (
   'test_drive_booking',
@@ -59,10 +63,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://api.mercedes-benz.com/v1/test-drives',
   NULL,
   '{"type": "object", "properties": {"model_id": {"type": "string", "description": "Gewuenschtes Modell"}, "dealer_id": {"type": "string", "description": "Haendler-ID"}, "preferred_date": {"type": "string", "format": "date"}, "preferred_time": {"type": "string", "enum": ["morning", "afternoon", "evening"]}, "customer_name": {"type": "string"}, "customer_phone": {"type": "string"}, "customer_email": {"type": "string"}}, "required": ["model_id", "dealer_id", "customer_name"]}',
-  '{proactive_contact}',
+  '{data_processing}',
   '{web,smart_storefront,whatsapp,app,dealer}',
   30,
-  true
+  true,
+  'normal'
 ),
 (
   'service_booking',
@@ -75,7 +80,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{proactive_contact}',
   '{web,app,mbux,dealer}',
   50,
-  true
+  true,
+  'normal'
 ),
 (
   'recall_check',
@@ -88,7 +94,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{}',
   '{web,app,mbux,dealer}',
   30,
-  true
+  true,
+  'normal'
 ),
 (
   'order_status',
@@ -101,7 +108,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{}',
   '{web,app,mbux,dealer}',
   50,
-  true
+  true,
+  'normal'
 ),
 -- Phase 2: Configurator-Granular
 (
@@ -112,10 +120,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/configurator/create',
   'mb-configurator-v1',
   '{"type": "object", "properties": {"model_id": {"type": "string"}, "engine_id": {"type": "string"}, "market": {"type": "string", "default": "AT"}}, "required": ["model_id"]}',
-  '{ai_personalization}',
+  '{}',
   '{web,smart_storefront,app,dealer}',
   0,
-  true
+  true,
+  'normal'
 ),
 (
   'configurator.modify_option',
@@ -128,7 +137,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{ai_personalization}',
   '{web,smart_storefront,app,dealer}',
   0,
-  true
+  true,
+  'normal'
 ),
 (
   'configurator.get_pricing',
@@ -141,7 +151,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{}',
   '{web,smart_storefront,whatsapp,app,dealer}',
   0,
-  true
+  true,
+  'normal'
 ),
 (
   'configurator.save_config',
@@ -154,7 +165,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{ai_personalization}',
   '{web,smart_storefront,app}',
   20,
-  true
+  true,
+  'normal'
 ),
 (
   'configurator.share_config',
@@ -164,10 +176,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/configurator/share',
   'mb-configurator-v1',
   '{"type": "object", "properties": {"configuration_id": {"type": "string"}, "format": {"type": "string", "enum": ["link", "qr", "pdf"]}}, "required": ["configuration_id"]}',
-  '{}',
+  '{cross_channel}',
   '{web,smart_storefront,whatsapp,app}',
   0,
-  true
+  true,
+  'normal'
 ),
 -- Phase 2: Connected Vehicle
 (
@@ -178,10 +191,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/vehicle/status',
   'mb-vehicle-v1',
   '{"type": "object", "properties": {"vin": {"type": "string"}}, "required": ["vin"]}',
-  '{ai_personalization}',
+  '{vehicle_data}',
   '{app,mbux,web}',
   60,
-  true
+  true,
+  'normal'
 ),
 (
   'vehicle.remote_control',
@@ -191,10 +205,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/vehicle/command',
   'mb-vehicle-v1',
   '{"type": "object", "properties": {"vin": {"type": "string"}, "command": {"type": "string", "enum": ["lock", "unlock", "precondition_start", "precondition_stop", "horn", "lights"]}}, "required": ["vin", "command"]}',
-  '{ai_personalization, proactive_contact}',
+  '{vehicle_control}',
   '{app,mbux,voice}',
   80,
-  true
+  true,
+  'high'
 ),
 (
   'vehicle.get_location',
@@ -204,10 +219,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/vehicle/location',
   'mb-vehicle-v1',
   '{"type": "object", "properties": {"vin": {"type": "string"}}, "required": ["vin"]}',
-  '{ai_personalization}',
+  '{vehicle_data,location_services}',
   '{app,mbux,web}',
   60,
-  true
+  true,
+  'normal'
 ),
 -- Phase 2: Service & History
 (
@@ -218,10 +234,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/service/history',
   'mb-service-v1',
   '{"type": "object", "properties": {"vin": {"type": "string"}, "limit": {"type": "integer", "default": 10}}, "required": ["vin"]}',
-  '{ai_personalization}',
+  '{vehicle_data}',
   '{web,app,mbux,dealer}',
   50,
-  true
+  true,
+  'normal'
 ),
 (
   'service.estimate_cost',
@@ -234,7 +251,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{}',
   '{web,app,whatsapp,dealer}',
   30,
-  true
+  true,
+  'normal'
 ),
 -- Phase 2: Finance
 (
@@ -245,10 +263,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/financing/eligibility',
   'mb-financing-v1',
   '{"type": "object", "properties": {"configuration_id": {"type": "string"}, "financing_type": {"type": "string", "enum": ["leasing", "financing", "balloon"]}}, "required": ["configuration_id", "financing_type"]}',
-  '{ai_personalization}',
+  '{data_processing,profiling_art22}',
   '{web,smart_storefront,app,dealer}',
   40,
-  true
+  true,
+  'elevated'
 ),
 -- Phase 2: Store & Commerce
 (
@@ -262,7 +281,8 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   '{ai_personalization}',
   '{web,app}',
   40,
-  true
+  true,
+  'normal'
 ),
 (
   'store.checkout',
@@ -272,10 +292,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://api.mercedes-benz.com/v1/store/checkout',
   NULL,
   '{"type": "object", "properties": {"payment_method": {"type": "string", "enum": ["mercedes_pay", "credit_card", "bank_transfer", "financing"]}, "delivery_type": {"type": "string", "enum": ["dealer_pickup", "home_delivery"]}}, "required": ["payment_method"]}',
-  '{ai_personalization}',
+  '{data_processing}',
   '{web,app}',
   60,
-  true
+  true,
+  'elevated'
 ),
 (
   'subscription.manage',
@@ -285,10 +306,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://api.mercedes-benz.com/v1/subscriptions',
   NULL,
   '{"type": "object", "properties": {"vin": {"type": "string"}, "action": {"type": "string", "enum": ["list", "activate", "cancel", "upgrade"]}, "subscription_id": {"type": "string"}, "plan_id": {"type": "string"}}, "required": ["vin", "action"]}',
-  '{ai_personalization}',
+  '{data_processing}',
   '{web,app,mbux}',
   60,
-  true
+  true,
+  'normal'
 ),
 -- Phase 2: Charging
 (
@@ -299,10 +321,11 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/charging/stations',
   'mb-charging-v1',
   '{"type": "object", "properties": {"latitude": {"type": "number"}, "longitude": {"type": "number"}, "radius_km": {"type": "integer", "default": 25}, "connector_type": {"type": "string", "enum": ["ccs", "type2", "chademo"]}, "min_power_kw": {"type": "integer"}}, "required": ["latitude", "longitude"]}',
-  '{}',
+  '{location_services}',
   '{app,mbux,web,whatsapp}',
   0,
-  true
+  true,
+  'normal'
 ),
 (
   'charging.start_session',
@@ -312,8 +335,9 @@ INSERT INTO agent_tools (tool_name, display_name, description, endpoint_type, en
   'https://agent-garden.mercedes-benz.com/v1/charging/start',
   'mb-charging-v1',
   '{"type": "object", "properties": {"station_id": {"type": "string"}, "connector_id": {"type": "string"}, "vin": {"type": "string"}, "target_soc_percent": {"type": "integer", "default": 80}}, "required": ["station_id", "connector_id", "vin"]}',
-  '{ai_personalization}',
+  '{vehicle_control}',
   '{app,mbux}',
   70,
-  true
+  true,
+  'high'
 );

@@ -1,3 +1,57 @@
+/**
+ * D-017 kanonische 14 Consent-Typen — Single Source of Truth (INV-24).
+ * DB-ENUM, TypeScript und Seed müssen identisch sein.
+ */
+export type ConsentType =
+  | 'ai_personalization'
+  | 'memory_storage'
+  | 'ai_autonomy'
+  | 'profiling_art22'
+  | 'data_processing'
+  | 'analytics'
+  | 'data_retention'
+  | 'cross_channel'
+  | 'cross_device'
+  | 'vehicle_data'
+  | 'vehicle_control'
+  | 'location_services'
+  | 'marketing'
+  | 'proactive_contact'
+
+export const CONSENT_TYPES: readonly ConsentType[] = [
+  'ai_personalization',
+  'memory_storage',
+  'ai_autonomy',
+  'profiling_art22',
+  'data_processing',
+  'analytics',
+  'data_retention',
+  'cross_channel',
+  'cross_device',
+  'vehicle_data',
+  'vehicle_control',
+  'location_services',
+  'marketing',
+  'proactive_contact',
+] as const
+
+export const DEPRECATED_CONSENT_TYPES = ['voice_recording', 'location_tracking'] as const
+export type DeprecatedConsentType = typeof DEPRECATED_CONSENT_TYPES[number]
+
+export function isValidConsentType(value: string): value is ConsentType {
+  return (CONSENT_TYPES as readonly string[]).includes(value)
+}
+
+export function assertConsentType(value: string): ConsentType {
+  if (DEPRECATED_CONSENT_TYPES.includes(value as DeprecatedConsentType)) {
+    throw new Error(`Consent type '${value}' is deprecated and cannot be used for new records`)
+  }
+  if (!isValidConsentType(value)) {
+    throw new Error(`Unknown consent type: '${value}'`)
+  }
+  return value
+}
+
 export interface VehicleConfiguration {
   configurationId: string
   modelId: string
