@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { JourneyPhase, ProactivityLevel } from './types.js'
+import { isConsentGranted } from './consent.js'
 
 export const INTENT_SIGNAL_WEIGHTS: Record<string, number> = {
   page_view_model: 3,
@@ -130,17 +131,14 @@ async function checkConsent(
 ): Promise<SafetyValveResult> {
   if (level === 'ready' || level === 'still') return { allowed: true }
 
-  const { data } = await supabase
-    .from('consent_records')
-    .select('granted')
-    .eq('customer_id', profileId)
-    .eq('consent_type', 'proactive_contact')
-    .eq('granted', true)
-    .is('revoked_at', null)
-    .maybeSingle()
-
-  if (!data) {
-    return { allowed: false, reason: 'Keine Einwilligung für proaktive Nachrichten' }
+  try {
+    const granted = await isConsentGranted(profileId, 'proactive_contact', supabase)
+    if (!granted) {
+      return { allowed: false, reason: 'Keine Einwilligung für proaktive Nachrichten' }
+    }
+    return { allowed: true }
+  } catch (err) {
+    console.error(`[checkConsent] Error checking proactive_contact for ${profileId}:`, err)
+    return { allowed: false, reason: 'Fehler beim Prüfen der Einwilligung' }
   }
-  return { allowed: true }
 }

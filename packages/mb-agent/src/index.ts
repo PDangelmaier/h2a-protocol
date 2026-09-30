@@ -9,7 +9,7 @@ export { getAvailableTools, executeToolWithConsent, formatToolsForNexus, getTool
 export { truncateToolResult } from './truncation.js'
 export type { TruncationOptions } from './truncation.js'
 export { estimateTokens } from './token-estimation.js'
-export { loadGrantedConsents, clearConsentCache, buildConsentHint, logConsentDenial } from './consent.js'
+export { loadGrantedConsents, isConsentGranted, countGrantedConsents, clearConsentCache, buildConsentHint, logConsentDenial } from './consent.js'
 export type { ConsentDenial } from './consent.js'
 export { loadAgentMemories, persistMemory, pruneMemories } from './memory.js'
 export { resolveModel, invalidateModelCache, registerModel, activateModel, listModelConfigs, rollbackModel } from './model-config.js'
