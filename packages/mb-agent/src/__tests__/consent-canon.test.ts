@@ -50,8 +50,8 @@ describe('SPEC-031: Consent-Kanon 14 Typen', () => {
   })
 
   describe('AC-2: Deprecated Typen werden migriert mit Traceability', () => {
-    it('Migration enthält UPDATE für voice_recording → ai_personalization', () => {
-      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/021_consent_canon.sql')
+    it('Migration 022 enthält UPDATE für voice_recording → ai_personalization', () => {
+      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/022_consent_canon_data.sql')
       const migration = readFileSync(migrationPath, 'utf-8')
 
       expect(migration).toContain("SET consent_type = 'ai_personalization'")
@@ -59,8 +59,8 @@ describe('SPEC-031: Consent-Kanon 14 Typen', () => {
       expect(migration).toContain("WHERE consent_type = 'voice_recording'")
     })
 
-    it('Migration enthält UPDATE für location_tracking → location_services', () => {
-      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/021_consent_canon.sql')
+    it('Migration 022 enthält UPDATE für location_tracking → location_services', () => {
+      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/022_consent_canon_data.sql')
       const migration = readFileSync(migrationPath, 'utf-8')
 
       expect(migration).toContain("SET consent_type = 'location_services'")
@@ -68,8 +68,8 @@ describe('SPEC-031: Consent-Kanon 14 Typen', () => {
       expect(migration).toContain("WHERE consent_type = 'location_tracking'")
     })
 
-    it('Migration fügt original_consent_type Spalte hinzu', () => {
-      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/021_consent_canon.sql')
+    it('Migration 022 fügt original_consent_type Spalte hinzu', () => {
+      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/022_consent_canon_data.sql')
       const migration = readFileSync(migrationPath, 'utf-8')
 
       expect(migration).toContain('original_consent_type')
@@ -190,8 +190,8 @@ describe('SPEC-031: Consent-Kanon 14 Typen', () => {
       expect(section).toContain("'high'")
     })
 
-    it('Migration 021 fügt risk_level Spalte mit CHECK constraint hinzu', () => {
-      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/021_consent_canon.sql')
+    it('Migration 022 fügt risk_level Spalte mit CHECK constraint hinzu', () => {
+      const migrationPath = resolve(__dirname, '../../../../supabase/migrations/022_consent_canon_data.sql')
       const migration = readFileSync(migrationPath, 'utf-8')
 
       expect(migration).toContain('risk_level')

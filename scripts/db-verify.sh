@@ -12,8 +12,12 @@ MIGRATIONS_DIR="$PROJECT_ROOT/supabase/migrations"
 SEEDS_DIR="$PROJECT_ROOT/supabase/seed"
 
 cleanup() {
-  echo "Cleaning up..."
-  docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+  if [ "${KEEP_CONTAINER:-}" = "1" ]; then
+    echo "Container $CONTAINER_NAME kept alive (KEEP_CONTAINER=1)."
+  else
+    echo "Cleaning up..."
+    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
