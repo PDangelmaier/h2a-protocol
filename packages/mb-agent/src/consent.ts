@@ -24,27 +24,37 @@ export async function loadGrantedConsents(
     return cached.consents
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('consent_records')
-    .select('consent_type, granted_at, revoked_at, retention_days')
+    .select('consent_type, granted, granted_at, revoked_at, retention_days, created_at')
     .eq('customer_id', profileId)
-    .eq('granted', true)
-    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error(`[loadGrantedConsents] DB error for ${profileId}: ${error.message}`)
+    return []
+  }
+
+  const latest = new Map<string, (typeof data)[number]>()
+  for (const row of data ?? []) {
+    if (!latest.has(row.consent_type)) {
+      latest.set(row.consent_type, row)
+    }
+  }
 
   const now = Date.now()
-  const active = (data ?? [])
-    .filter(r => {
-      if (r.retention_days != null) {
-        const expiresAt = new Date(r.granted_at).getTime() + r.retention_days * 86_400_000
-        return expiresAt > now
-      }
-      return true
-    })
-    .map(r => r.consent_type as ConsentType)
+  const active: ConsentType[] = []
+  for (const row of latest.values()) {
+    if (!row.granted || row.revoked_at != null) continue
+    if (row.retention_days != null) {
+      const expiresAt = new Date(row.granted_at).getTime() + row.retention_days * 86_400_000
+      if (expiresAt <= now) continue
+    }
+    active.push(row.consent_type as ConsentType)
+  }
 
-  const unique = [...new Set(active)]
-  consentCache.set(profileId, { consents: unique, fetchedAt: now })
-  return unique
+  consentCache.set(profileId, { consents: active, fetchedAt: now })
+  return active
 }
 
 export interface ConsentDenial {

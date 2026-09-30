@@ -36,8 +36,8 @@ describe('SPEC-032 AC-1: echte Consents aus consent_records', () => {
   it('loads granted, non-revoked consents for a profile', async () => {
     const mock = makeMockSupabase({
       consent_records: [
-        { consent_type: 'ai_personalization', granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null },
-        { consent_type: 'vehicle_data', granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null },
+        { consent_type: 'ai_personalization', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' },
+        { consent_type: 'vehicle_data', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' },
       ],
     })
 
@@ -104,7 +104,7 @@ describe('SPEC-032 AC-3: widerrufener oder abgelaufener Consent zählt als fehle
     const pastDate = new Date(Date.now() - 100 * 86_400_000).toISOString()
     const mock = makeMockSupabase({
       consent_records: [
-        { consent_type: 'analytics', granted_at: pastDate, revoked_at: null, retention_days: 30 },
+        { consent_type: 'analytics', granted: true, granted_at: pastDate, revoked_at: null, retention_days: 30, created_at: pastDate },
       ],
     })
 
@@ -117,7 +117,7 @@ describe('SPEC-032 AC-3: widerrufener oder abgelaufener Consent zählt als fehle
     const recentDate = new Date(Date.now() - 5 * 86_400_000).toISOString()
     const mock = makeMockSupabase({
       consent_records: [
-        { consent_type: 'analytics', granted_at: recentDate, revoked_at: null, retention_days: 365 },
+        { consent_type: 'analytics', granted: true, granted_at: recentDate, revoked_at: null, retention_days: 365, created_at: recentDate },
       ],
     })
 
@@ -125,10 +125,38 @@ describe('SPEC-032 AC-3: widerrufener oder abgelaufener Consent zählt als fehle
     expect(consents).toContain('analytics')
   })
 
-  it('revoked consents are already filtered by DB query (revoked_at IS NULL)', async () => {
-    const mock = makeMockSupabase({ consent_records: [] })
+  it('revoked consent (revoked_at set) is excluded', async () => {
+    const mock = makeMockSupabase({
+      consent_records: [
+        { consent_type: 'analytics', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: '2026-06-01T00:00:00Z', retention_days: null, created_at: '2026-01-01T00:00:00Z' },
+      ],
+    })
     const consents = await loadGrantedConsents('prof-revoked', mock as never)
     expect(consents).toEqual([])
+  })
+
+  it('M1-a: revocation via new row with granted=false supersedes earlier grant', async () => {
+    const mock = makeMockSupabase({
+      consent_records: [
+        { consent_type: 'analytics', granted: false, granted_at: null, revoked_at: null, retention_days: null, created_at: '2026-06-15T00:00:00Z' },
+        { consent_type: 'analytics', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' },
+      ],
+    })
+    const consents = await loadGrantedConsents('prof-m1a', mock as never)
+    expect(consents).not.toContain('analytics')
+    expect(consents).toEqual([])
+  })
+
+  it('M1-b: re-grant after revocation restores consent', async () => {
+    const mock = makeMockSupabase({
+      consent_records: [
+        { consent_type: 'analytics', granted: true, granted_at: '2026-09-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-09-01T00:00:00Z' },
+        { consent_type: 'analytics', granted: false, granted_at: null, revoked_at: null, retention_days: null, created_at: '2026-06-15T00:00:00Z' },
+        { consent_type: 'analytics', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' },
+      ],
+    })
+    const consents = await loadGrantedConsents('prof-m1b', mock as never)
+    expect(consents).toContain('analytics')
   })
 })
 
@@ -206,13 +234,36 @@ describe('SPEC-032 AC-7: Consent-Cache mit 60s TTL', () => {
   beforeEach(() => clearConsentCache())
   afterEach(() => { vi.useRealTimers() })
 
+  it('M2: cache hit adds ≤30ms overhead (measured)', async () => {
+    const fromMock = vi.fn()
+    const chain: Record<string, unknown> = {}
+    const methods = ['select', 'eq', 'order']
+    for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
+    chain.then = (resolve: (v: unknown) => void) =>
+      Promise.resolve({ data: [{ consent_type: 'marketing', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' }], error: null }).then(resolve)
+    fromMock.mockReturnValue(chain)
+    const mock = { from: fromMock }
+
+    await loadGrantedConsents('prof-perf', mock as never)
+
+    const runs = 100
+    const start = performance.now()
+    for (let i = 0; i < runs; i++) {
+      await loadGrantedConsents('prof-perf', mock as never)
+    }
+    const elapsed = performance.now() - start
+    const avgMs = elapsed / runs
+
+    expect(avgMs).toBeLessThan(30)
+  })
+
   it('second call within 60s uses cache (no DB query)', async () => {
     const fromMock = vi.fn()
     const chain: Record<string, unknown> = {}
-    const methods = ['select', 'eq', 'is']
+    const methods = ['select', 'eq', 'order']
     for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
     chain.then = (resolve: (v: unknown) => void) =>
-      Promise.resolve({ data: [{ consent_type: 'marketing', granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null }], error: null }).then(resolve)
+      Promise.resolve({ data: [{ consent_type: 'marketing', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' }], error: null }).then(resolve)
     fromMock.mockReturnValue(chain)
     const mock = { from: fromMock }
 
@@ -229,10 +280,10 @@ describe('SPEC-032 AC-7: Consent-Cache mit 60s TTL', () => {
     vi.useFakeTimers()
     const fromMock = vi.fn()
     const chain: Record<string, unknown> = {}
-    const methods = ['select', 'eq', 'is']
+    const methods = ['select', 'eq', 'order']
     for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
     chain.then = (resolve: (v: unknown) => void) =>
-      Promise.resolve({ data: [{ consent_type: 'marketing', granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null }], error: null }).then(resolve)
+      Promise.resolve({ data: [{ consent_type: 'marketing', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' }], error: null }).then(resolve)
     fromMock.mockReturnValue(chain)
     const mock = { from: fromMock }
 
@@ -242,5 +293,34 @@ describe('SPEC-032 AC-7: Consent-Cache mit 60s TTL', () => {
 
     const callCount = fromMock.mock.calls.filter((c: unknown[]) => c[0] === 'consent_records').length
     expect(callCount).toBe(2)
+  })
+})
+
+describe('SPEC-032 N3: DB-Fehler wird geloggt, nicht gecacht', () => {
+  beforeEach(() => clearConsentCache())
+
+  it('DB error returns [] and logs console.error, does not cache', async () => {
+    const fromMock = vi.fn()
+    const chain: Record<string, unknown> = {}
+    const methods = ['select', 'eq', 'order']
+    for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
+    chain.then = (resolve: (v: unknown) => void) =>
+      Promise.resolve({ data: null, error: { message: 'connection refused' } }).then(resolve)
+    fromMock.mockReturnValue(chain)
+    const mock = { from: fromMock }
+
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const consents = await loadGrantedConsents('prof-err', mock as never)
+    expect(consents).toEqual([])
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('connection refused'))
+
+    chain.then = (resolve: (v: unknown) => void) =>
+      Promise.resolve({ data: [{ consent_type: 'marketing', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, created_at: '2026-01-01T00:00:00Z' }], error: null }).then(resolve)
+
+    const consents2 = await loadGrantedConsents('prof-err', mock as never)
+    expect(consents2).toContain('marketing')
+
+    spy.mockRestore()
   })
 })
