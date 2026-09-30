@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CustomerContext, ToolResult } from './types.js'
+import { buildConsentHint, logConsentDenial } from './consent.js'
 
 interface ToolDefinition {
   id: string
@@ -57,6 +58,7 @@ export async function executeToolWithConsent(
   profileId: string,
   grantedConsents: string[],
   supabase: SupabaseClient,
+  locale: string = 'de',
 ): Promise<ToolResult> {
   const { data: tool } = await supabase
     .from('agent_tools')
@@ -69,7 +71,24 @@ export async function executeToolWithConsent(
   const required: string[] = tool.requires_consent ?? []
   const missing = required.filter((c: string) => !grantedConsents.includes(c))
   if (missing.length > 0) {
-    return { error: true, data: { message: `Einwilligung erforderlich: ${missing.join(', ')}` } }
+    logConsentDenial({
+      profileId,
+      toolId: toolUse.toolId,
+      toolName: tool.tool_name,
+      requiredConsents: required,
+      missingConsents: missing,
+      timestamp: new Date().toISOString(),
+    }, supabase).catch(() => {})
+
+    const hint = buildConsentHint(missing, locale)
+    return {
+      error: true,
+      data: {
+        message: hint,
+        missingConsents: missing,
+        requiredConsents: required,
+      },
+    }
   }
 
   await supabase.from('analytics_events').insert({
