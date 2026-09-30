@@ -1,7 +1,7 @@
 -- Composite indexes for common query patterns
 CREATE INDEX idx_sessions_customer_recent ON sessions(customer_id, created_at DESC);
 CREATE INDEX idx_conversations_profile_recent ON conversations(profile_id, created_at DESC);
-CREATE INDEX idx_signals_customer_30d ON behavioral_signals(customer_id, created_at DESC) WHERE created_at > now() - interval '30 days';
+CREATE INDEX idx_signals_customer_30d ON behavioral_signals(customer_id, created_at DESC);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at()
