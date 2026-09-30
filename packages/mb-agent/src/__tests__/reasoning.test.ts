@@ -206,4 +206,33 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
   })
 
   it.todo('KNOWN-GAP INV-14: persistTurn is awaited in response path without try-catch — a DB error would propagate to caller')
+
+  it('KNOWN-GAP INV-13: executeToolWithConsent receives hardcoded consents, not real consent_records', async () => {
+    mockNexusSync
+      .mockResolvedValueOnce({
+        text: '',
+        toolCalls: [{ id: 'tc-c', name: 'configurator', input: { action: 'create' } }],
+        stopReason: 'tool_use',
+        inputTokens: 10,
+        outputTokens: 5,
+      })
+      .mockResolvedValueOnce({
+        text: 'Konfiguration erstellt.',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        inputTokens: 50,
+        outputTokens: 10,
+      })
+
+    mockExecuteTool.mockResolvedValueOnce({ error: false, data: { id: 'cfg-1' } })
+
+    await reasoningLoop(session, signal, config)
+
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      expect.objectContaining({ toolId: 'tc-c' }),
+      'prof-1',
+      ['ai_personalization'],
+      expect.anything(),
+    )
+  })
 })
