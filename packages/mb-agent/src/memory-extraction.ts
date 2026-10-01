@@ -231,15 +231,14 @@ export async function trackMemoryAccess(
   if (memoryIds.length === 0) return
   const now = new Date().toISOString()
   for (const id of memoryIds) {
-    await supabase.rpc('increment_memory_access', { memory_id: id, accessed_at: now })
-      .then(() => {})
-      .catch(() => {
-        supabase
-          .from('agent_memories')
-          .update({ last_accessed_at: now, access_count: 1 })
-          .eq('id', id)
-          .then(() => {})
-      })
+    try {
+      await supabase.rpc('increment_memory_access', { memory_id: id, accessed_at: now })
+    } catch {
+      await supabase
+        .from('agent_memories')
+        .update({ last_accessed_at: now, access_count: 1 })
+        .eq('id', id)
+    }
   }
 }
 
