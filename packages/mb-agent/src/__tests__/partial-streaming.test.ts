@@ -122,7 +122,7 @@ describe('SPEC-002 AC-3: Status events pass through PII filter', () => {
       new URL('../../../../supabase/functions/h2a/index.ts', import.meta.url),
       'utf-8',
     )
-    expect(edgeFn).toContain("sendSseEvent(controller, { type: 'status'")
+    expect(edgeFn).toContain("pushEvent({ type: 'status'")
     expect(edgeFn).toContain('filterSseEvent')
   })
 

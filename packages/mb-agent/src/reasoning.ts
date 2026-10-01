@@ -71,11 +71,16 @@ interface ReasoningResult {
   experimentAssignment?: { experimentId: string; variantIndex: number } | null
 }
 
+export class ClientDisconnectedError extends Error {
+  constructor() { super('Client disconnected') }
+}
+
 export async function reasoningLoop(
   session: SessionState,
   signal: UserSignal,
   config: AgentConfig,
   onStatusEvent?: OnStatusEvent,
+  abortSignal?: AbortSignal,
 ): Promise<ReasoningResult> {
   const { createClient } = await import('@supabase/supabase-js')
   const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey)
@@ -148,8 +153,18 @@ export async function reasoningLoop(
   let response: ProcessedResponse
   try {
     const offeredToolNames = new Set(tools.map(t => t.toolName))
-    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase, offeredToolNames, onStatusEvent)
+    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase, offeredToolNames, onStatusEvent, abortSignal)
   } catch (err) {
+    if (err instanceof ClientDisconnectedError) {
+      return {
+        response: '',
+        intent,
+        toolsUsed: [],
+        newMemories: [],
+        securityEvents: [],
+      }
+    }
+
     const reason: DegradationReason =
       err instanceof FallbackChainExhaustedError || err instanceof FallbackTimeoutError
         ? 'fallback_exhausted'
@@ -355,6 +370,7 @@ async function processResponse(
   supabase: SupabaseClient,
   offeredToolNames: Set<string>,
   onStatusEvent?: OnStatusEvent,
+  abortSignal?: AbortSignal,
 ): Promise<ProcessedResponse> {
   const toolsUsed: string[] = []
   const newMemories: string[] = []
@@ -369,6 +385,10 @@ async function processResponse(
     : createStructuredLogEmitter()
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    if (abortSignal?.aborted) {
+      throw new ClientDisconnectedError()
+    }
+
     const estimate = estimateInputTokens(
       currentRequest.system[0]?.text ?? '',
       currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,

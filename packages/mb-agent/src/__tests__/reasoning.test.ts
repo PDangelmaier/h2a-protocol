@@ -143,7 +143,7 @@ vi.mock('../summarization.js', () => ({
 }))
 
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop } from '../reasoning.js'
+import { reasoningLoop, ClientDisconnectedError } from '../reasoning.js'
 
 function makeMockSupabase() {
   const chain: Record<string, unknown> = {}
@@ -451,5 +451,76 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
     await reasoningLoop(session, signal, config)
     expect(vi.mocked(buildToolError)).toHaveBeenCalledWith('not_offered', 'hidden_tool', 0, 'de-DE')
     expect(mockExecuteTool).not.toHaveBeenCalled()
+  })
+})
+
+describe('AC-3 SPEC-015: client disconnect aborts further Nexus calls', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    const mock = makeMockSupabase()
+    vi.mocked(createClient).mockReturnValue(mock as never)
+  })
+
+  it('returns empty response when abortSignal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+
+    mockNexusSync.mockResolvedValueOnce({
+      text: '',
+      toolCalls: [{ id: 'tc-1', name: 'tool_a', input: {} }],
+      stopReason: 'tool_use',
+      inputTokens: 10, outputTokens: 5,
+    })
+
+    const result = await reasoningLoop(session, signal, config, undefined, controller.signal)
+    expect(result.response).toBe('')
+    expect(result.toolsUsed).toEqual([])
+  })
+
+  it('aborts between tool rounds when signal fires mid-loop', async () => {
+    const controller = new AbortController()
+
+    mockNexusSync
+      .mockResolvedValueOnce({
+        text: '',
+        toolCalls: [{ id: 'tc-1', name: 'tool_a', input: {} }],
+        stopReason: 'tool_use',
+        inputTokens: 10, outputTokens: 5,
+      })
+
+    mockExecuteTool.mockImplementation(async () => {
+      controller.abort()
+      return { error: false, data: { ok: true } }
+    })
+
+    const result = await reasoningLoop(session, signal, config, undefined, controller.signal)
+    expect(result.response).toBe('')
+    expect(mockNexusSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('costs for completed calls are still tracked', async () => {
+    const { trackNexusCost } = await import('../cost-gate.js')
+    const controller = new AbortController()
+
+    mockNexusSync.mockResolvedValueOnce({
+      text: '',
+      toolCalls: [{ id: 'tc-1', name: 'tool_a', input: {} }],
+      stopReason: 'tool_use',
+      inputTokens: 100, outputTokens: 50,
+    })
+
+    mockExecuteTool.mockImplementation(async () => {
+      controller.abort()
+      return { error: false, data: { ok: true } }
+    })
+
+    await reasoningLoop(session, signal, config, undefined, controller.signal)
+    expect(vi.mocked(trackNexusCost)).toHaveBeenCalled()
+  })
+
+  it('ClientDisconnectedError is a proper Error subclass', () => {
+    const err = new ClientDisconnectedError()
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toBe('Client disconnected')
   })
 })
