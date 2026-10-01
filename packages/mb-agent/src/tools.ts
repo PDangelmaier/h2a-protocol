@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CustomerContext, ToolResult } from './types.js'
 import { buildConsentHint, logConsentDenial } from './consent.js'
+import { buildToolError, classifyToolError, sanitizeErrorForModel } from './tool-errors.js'
+import { trackToolError } from './langfuse.js'
+
+const DEFAULT_TIMEOUT_MS = 5_000
 
 interface ToolDefinition {
   id: string
@@ -13,6 +17,8 @@ interface ToolDefinition {
   minPidScore: number
   requiresConsent: string[]
   allowedChannels: string[]
+  timeoutSeconds: number
+  riskLevel: string
 }
 
 interface ToolUse {
@@ -50,6 +56,8 @@ function mapToolRow(row: Record<string, unknown>): ToolDefinition {
     minPidScore: row.min_pid_score as number,
     requiresConsent: (row.requires_consent as string[]) ?? [],
     allowedChannels: (row.allowed_channels as string[]) ?? [],
+    timeoutSeconds: (row.timeout_seconds as number) ?? 5,
+    riskLevel: (row.risk_level as string) ?? 'normal',
   }
 }
 
@@ -60,13 +68,22 @@ export async function executeToolWithConsent(
   supabase: SupabaseClient,
   locale: string = 'de',
 ): Promise<ToolResult> {
+  const startMs = Date.now()
+
   const { data: tool } = await supabase
     .from('agent_tools')
     .select('*')
     .eq('id', toolUse.toolId)
     .single()
 
-  if (!tool) return { error: true, data: { message: 'Tool nicht gefunden' } }
+  if (!tool) {
+    const result = buildToolError('not_found', toolUse.toolId, Date.now() - startMs, locale)
+    trackToolError(toolUse.toolId, 'not_found', Date.now() - startMs).catch(() => {})
+    return result
+  }
+
+  const toolName = tool.tool_name as string
+  const timeoutMs = ((tool.timeout_seconds as number) ?? 5) * 1000
 
   const required: string[] = tool.requires_consent ?? []
   const missing = required.filter((c: string) => !grantedConsents.includes(c))
@@ -74,31 +91,42 @@ export async function executeToolWithConsent(
     logConsentDenial({
       profileId,
       toolId: toolUse.toolId,
-      toolName: tool.tool_name,
+      toolName,
       requiredConsents: required,
       missingConsents: missing,
       timestamp: new Date().toISOString(),
     }, supabase).catch(() => {})
 
     const hint = buildConsentHint(missing, locale)
-    return {
-      error: true,
-      data: {
-        message: hint,
-        missingConsents: missing,
-        requiredConsents: required,
-      },
-    }
+    const result = buildToolError('consent_missing', toolName, Date.now() - startMs, locale)
+    result.data.message = hint
+    result.data.missingConsents = missing
+    result.data.requiredConsents = required
+    trackToolError(toolName, 'consent_missing', Date.now() - startMs).catch(() => {})
+    return result
   }
 
-  await supabase.from('analytics_events').insert({
-    session_id: null,
-    profile_id: profileId,
-    event_type: 'tool_execution',
-    metadata: { tool_id: toolUse.toolId, input: toolUse.input, status: 'dispatched' },
-  })
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
 
-  return { error: false, data: { status: 'dispatched', toolId: toolUse.toolId } }
+    await supabase.from('analytics_events').insert({
+      session_id: null,
+      profile_id: profileId,
+      event_type: 'tool_execution',
+      metadata: { tool_id: toolUse.toolId, status: 'dispatched' },
+    })
+
+    clearTimeout(timer)
+    const durationMs = Date.now() - startMs
+
+    return { error: false, data: { status: 'dispatched', toolId: toolUse.toolId } }
+  } catch (err: unknown) {
+    const durationMs = Date.now() - startMs
+    const errorType = classifyToolError(err, toolName, durationMs, timeoutMs)
+    trackToolError(toolName, errorType, durationMs).catch(() => {})
+    return buildToolError(errorType, toolName, durationMs, locale)
+  }
 }
 
 interface NexusToolSpec {
