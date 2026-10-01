@@ -5,6 +5,8 @@ import type {
 import { resolveActivePrompt } from './prompt-versioning.js'
 import type { PromptVersion } from './prompt-versioning.js'
 import { buildFewShotBlock } from './few-shot-guardrails.js'
+import { buildStateTrackingLayer } from './state-tracking.js'
+import type { ConversationState } from './state-tracking.js'
 
 export interface ResolvedPersonalityWithVersion extends CCPPersonality {
   promptVersion: number | null
@@ -114,8 +116,9 @@ export function buildSystemPrompt(
   memories: AgentMemory[],
   channel: Channel,
   market: string,
+  conversationState?: ConversationState | null,
 ): string {
-  const { full } = buildSystemPromptSplit(personality, customer, memories, channel, market)
+  const { full } = buildSystemPromptSplit(personality, customer, memories, channel, market, conversationState)
   return full
 }
 
@@ -125,6 +128,7 @@ export function buildSystemPromptSplit(
   memories: AgentMemory[],
   channel: Channel,
   market: string,
+  conversationState?: ConversationState | null,
 ): PromptBuild {
   const staticPart = `${personality.systemPrompt}\n\n${buildFewShotBlock()}`
 
@@ -135,6 +139,7 @@ export function buildSystemPromptSplit(
     getProactivityRules(customer.proactivityLevel),
     buildIdentityLayer(customer),
     buildMemoryLayer(memories),
+    buildStateTrackingLayer(conversationState ?? null),
     buildGuardrailLayer(),
     buildComplianceLayer(market),
   ]

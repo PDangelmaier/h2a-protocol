@@ -29,6 +29,8 @@ import type { TraceEmitter } from './loop-telemetry.js'
 import { needsSummarization, summarizeOlderTurns, loadLatestSummary, enforceHardLimit, buildHistoryWithSummary, estimateSessionTokens, getSummarizationConfig } from './summarization.js'
 import { resolveRoutingPurpose } from './turn-classifier.js'
 import type { ClassificationResult } from './turn-classifier.js'
+import { trackConversationState, loadLatestState, buildEscalationHint } from './state-tracking.js'
+import type { ConversationState } from './state-tracking.js'
 
 interface SessionState {
   id: string
@@ -190,6 +192,15 @@ export async function reasoningLoop(
     console.error(`[extractMemories] session=${session.id}: ${msg}`)
   })
 
+  trackConversationState(
+    session.id,
+    { user: signal.content, assistant: response.text },
+    config.nexus, supabase,
+  ).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[trackConversationState] session=${session.id}: ${msg}`)
+  })
+
   const allTurns = [
     ...session.conversationHistory.map((m, i) => ({ role: m.role as 'user' | 'assistant', content: m.content, sequence: i + 1 })),
     { role: 'user' as const, content: signal.content, sequence: session.conversationHistory.length + 1 },
@@ -238,10 +249,11 @@ async function computeIntelligence(
   session: SessionState,
   supabase: SupabaseClient,
 ) {
-  const [personality, signals, memories] = await Promise.all([
+  const [personality, signals, memories, conversationState] = await Promise.all([
     resolvePersonality(context, supabase),
     loadRecentSignals(session.profileId, supabase),
     loadAgentMemories(session.profileId, context, supabase),
+    loadLatestState(session.id, supabase),
   ])
 
   const intentScore = computeIntentScore(signals, session.journeyPhase)
@@ -250,7 +262,7 @@ async function computeIntelligence(
   context.intentScore = intentScore
   context.proactivityLevel = proactivityLevel
 
-  const promptBuild = buildSystemPromptSplit(personality, context, memories, session.channel, session.market)
+  const promptBuild = buildSystemPromptSplit(personality, context, memories, session.channel, session.market, conversationState)
 
   const intent: IntentSnapshot = {
     intentScore,
@@ -261,7 +273,7 @@ async function computeIntelligence(
     computedAt: new Date(),
   }
 
-  return { personality: { ...personality, systemPrompt: promptBuild.full }, intent, memories, promptVersion: personality.promptVersion ?? null, promptBuild }
+  return { personality: { ...personality, systemPrompt: promptBuild.full }, intent, memories, promptVersion: personality.promptVersion ?? null, promptBuild, conversationState }
 }
 
 async function loadRecentSignals(profileId: string, supabase: SupabaseClient) {
