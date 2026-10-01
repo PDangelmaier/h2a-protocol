@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto'
-
 export interface ToolRoundTrace {
   round: number
   toolNames: string[]
@@ -28,7 +26,15 @@ export function createLoopState(): LoopTelemetryState {
 
 export function hashToolSignature(toolName: string, input: unknown): string {
   const normalized = JSON.stringify(input, Object.keys(input as Record<string, unknown>).sort())
-  return createHash('sha256').update(`${toolName}:${normalized}`).digest('hex').slice(0, 16)
+  const str = `${toolName}:${normalized}`
+  let h1 = 0x811c9dc5
+  let h2 = 0x01000193
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
+    h2 = Math.imul(h2 ^ c, 0x811c9dc5) >>> 0
+  }
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')
 }
 
 export function recordToolRound(
