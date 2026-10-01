@@ -21,4 +21,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.1.4"
+
+      - name: Deno type-check Edge Function
+        run: deno check --frozen --no-npm --config supabase/functions/deno.json supabase/functions/h2a/index.ts
+
       - run: pnpm run -r test
