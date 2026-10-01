@@ -161,8 +161,8 @@ jobs:
           fi
           echo "  ok   seq column"
 
-          IS_IDENTITY=$($PSQL -c "SELECT is_identity FROM information_schema.columns WHERE table_name='consent_records' AND column_name='seq';")
-          echo "$IS_IDENTITY" | grep -qi "yes" && echo "  ok   seq is IDENTITY" || { echo "  FAIL seq not IDENTITY: $IS_IDENTITY"; FAIL=$((FAIL+1)); }
+          SEQ_DEFAULT=$($PSQL -c "SELECT column_default FROM information_schema.columns WHERE table_name='consent_records' AND column_name='seq';")
+          echo "$SEQ_DEFAULT" | grep -qi "nextval" && echo "  ok   seq has auto-increment (nextval)" || { echo "  FAIL seq missing auto-increment: $SEQ_DEFAULT"; FAIL=$((FAIL+1)); }
 
           IDX=$($PSQL -c "SELECT indexname FROM pg_indexes WHERE tablename='consent_records' AND indexname='idx_consent_ordering';")
           [ -n "$IDX" ] && echo "  ok   idx_consent_ordering" || { echo "  FAIL index missing"; FAIL=$((FAIL+1)); }
