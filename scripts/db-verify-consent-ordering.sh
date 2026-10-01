@@ -16,137 +16,194 @@ if ! docker exec "$CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/
 fi
 
 FAIL=0
+CID="00000000-0000-0000-0000-000000000035"
+
+$PSQL <<SQL >/dev/null
+INSERT INTO customer_profiles (id, mercedes_me_id, first_seen_at, identity_tier)
+VALUES ('$CID', 'test-spec035', now(), 'anonymous')
+ON CONFLICT (id) DO NOTHING;
+SQL
 
 echo ""
-echo "--- AC-1: seq-Spalte existiert als BIGINT GENERATED ALWAYS AS IDENTITY ---"
+echo "=== Schema-Checks ==="
+
 SEQ_EXISTS=$($PSQL <<'SQL'
 SELECT count(*) FROM information_schema.columns
 WHERE table_name = 'consent_records' AND column_name = 'seq';
 SQL
 )
-if [ "$SEQ_EXISTS" -eq 1 ]; then
-  echo "  ok   seq-Spalte existiert"
-else
-  echo "  FAIL seq-Spalte fehlt"
-  ((FAIL++))
-fi
+[ "$SEQ_EXISTS" -eq 1 ] && echo "  ok   seq-Spalte existiert" || { echo "  FAIL seq-Spalte fehlt"; ((FAIL++)); }
 
-SEQ_IDENTITY=$($PSQL <<'SQL'
-SELECT is_identity FROM information_schema.columns
+SEQ_NULLABLE=$($PSQL <<'SQL'
+SELECT is_nullable FROM information_schema.columns
 WHERE table_name = 'consent_records' AND column_name = 'seq';
 SQL
 )
-if [ "$SEQ_IDENTITY" = "YES" ]; then
-  echo "  ok   seq ist IDENTITY-Spalte"
-else
-  echo "  FAIL seq ist keine IDENTITY-Spalte: $SEQ_IDENTITY"
-  ((FAIL++))
-fi
+[ "$SEQ_NULLABLE" = "NO" ] && echo "  ok   seq ist NOT NULL" || { echo "  FAIL seq ist nullable: $SEQ_NULLABLE"; ((FAIL++)); }
 
-echo ""
-echo "--- AC-1: Index idx_consent_ordering existiert ---"
+SEQ_DEFAULT=$($PSQL <<'SQL'
+SELECT column_default FROM information_schema.columns
+WHERE table_name = 'consent_records' AND column_name = 'seq';
+SQL
+)
+echo "$SEQ_DEFAULT" | grep -q "nextval" && echo "  ok   seq hat auto-increment DEFAULT ($SEQ_DEFAULT)" || { echo "  FAIL seq DEFAULT: $SEQ_DEFAULT"; ((FAIL++)); }
+
 IDX_EXISTS=$($PSQL <<'SQL'
-SELECT count(*) FROM pg_indexes
-WHERE indexname = 'idx_consent_ordering';
+SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_consent_ordering';
 SQL
 )
-if [ "$IDX_EXISTS" -eq 1 ]; then
-  echo "  ok   idx_consent_ordering existiert"
+[ "$IDX_EXISTS" -eq 1 ] && echo "  ok   idx_consent_ordering existiert" || { echo "  FAIL idx fehlt"; ((FAIL++)); }
+
+echo ""
+echo "=== M1: Bestehende Zeilen zeitlich nummeriert (UPDATE-Test) ==="
+
+$PSQL <<SQL >/dev/null
+DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'analytics';
+INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
+VALUES
+  ('$CID', 'analytics', true, '2026-01-01 10:00:00'),
+  ('$CID', 'analytics', true, '2026-01-01 11:00:00'),
+  ('$CID', 'analytics', false, '2026-01-01 12:00:00');
+SQL
+echo "  Drei Einträge (10:00, 11:00, 12:00)"
+
+# UPDATE älteste Zeile → physische Reihenfolge ändert sich
+$PSQL <<SQL >/dev/null
+UPDATE consent_records SET retention_days = 365
+WHERE customer_id = '$CID' AND consent_type = 'analytics'
+  AND granted_at = '2026-01-01 10:00:00';
+SQL
+echo "  Älteste Zeile (10:00) per UPDATE geändert"
+
+M1_RESULT=$($PSQL <<SQL
+SELECT to_char(granted_at, 'HH24:MI') AS ts, granted, seq
+FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'analytics'
+ORDER BY seq ASC;
+SQL
+)
+echo "  raw (seq ASC):"
+echo "$M1_RESULT" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line"; done
+
+TS_ORDER=$($PSQL <<SQL
+SELECT string_agg(to_char(granted_at, 'HH24:MI'), ',' ORDER BY seq ASC)
+FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'analytics';
+SQL
+)
+if [ "$TS_ORDER" = "10:00,11:00,12:00" ]; then
+  echo "  ok   M1: seq-Reihenfolge = granted_at-Reihenfolge trotz UPDATE"
 else
-  echo "  FAIL idx_consent_ordering fehlt"
+  echo "  FAIL M1: Erwartet 10:00,11:00,12:00 — bekommen: $TS_ORDER"
   ((FAIL++))
 fi
 
-PROFILE_ID="00000000-0000-0000-0000-000000000035"
-
-$PSQL <<SQL >/dev/null
-INSERT INTO customer_profiles (id, mercedes_me_id, first_seen_at, identity_tier)
-VALUES ('$PROFILE_ID', 'test-spec035', now(), 'anonymous')
-ON CONFLICT (id) DO NOTHING;
+# Endergebnis: Jüngste Zeile (12:00) granted=false → gilt nicht
+LATEST_A=$($PSQL <<SQL
+SELECT granted FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'analytics'
+ORDER BY seq DESC LIMIT 1;
 SQL
+)
+[ "$LATEST_A" = "f" ] && echo "  ok   Endergebnis: analytics gilt nicht (granted=false)" || { echo "  FAIL Endergebnis falsch: $LATEST_A"; ((FAIL++)); }
 
 echo ""
-echo "--- AC-4 Fall 1: Widerruf per revoked_at ---"
+echo "=== Fall (a): revoked_at → gilt nicht ==="
+
 $PSQL <<SQL >/dev/null
+DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'vehicle_data';
 INSERT INTO consent_records (customer_id, consent_type, granted, granted_at, revoked_at)
-VALUES ('$PROFILE_ID', 'marketing', true, now() - interval '30 days', now() - interval '1 day');
+VALUES ('$CID', 'vehicle_data', true, now(), now());
 SQL
-REVOKED_COUNT=$($PSQL <<SQL
-SELECT count(*) FROM consent_records
-WHERE customer_id = '$PROFILE_ID' AND consent_type = 'marketing'
-  AND granted = true AND revoked_at IS NOT NULL;
-SQL
-)
-if [ "$REVOKED_COUNT" -ge 1 ]; then
-  echo "  ok   Widerruf per revoked_at gespeichert"
-else
-  echo "  FAIL Widerruf per revoked_at nicht gefunden"
-  ((FAIL++))
-fi
-
-echo ""
-echo "--- AC-4 Fall 2: Widerruf per granted=false neue Zeile ---"
-$PSQL <<SQL >/dev/null
-INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
-VALUES ('$PROFILE_ID', 'analytics', true, now() - interval '30 days');
-INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
-VALUES ('$PROFILE_ID', 'analytics', false, now() - interval '1 day');
-SQL
-LATEST_ANALYTICS=$($PSQL <<SQL
-SELECT granted FROM consent_records
-WHERE customer_id = '$PROFILE_ID' AND consent_type = 'analytics'
+RESULT_A=$($PSQL <<SQL
+SELECT granted, revoked_at IS NOT NULL AS has_revoked, seq
+FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'vehicle_data'
 ORDER BY seq DESC LIMIT 1;
 SQL
 )
-if [ "$LATEST_ANALYTICS" = "f" ]; then
-  echo "  ok   Letzte Zeile per seq ist granted=false"
-else
-  echo "  FAIL Letzte Zeile per seq ist nicht granted=false: $LATEST_ANALYTICS"
-  ((FAIL++))
-fi
+echo "  raw: $RESULT_A"
+echo "$RESULT_A" | grep -qE "\|t\|" && echo "  ok   revoked_at vorhanden → gilt nicht" || { echo "  FAIL"; ((FAIL++)); }
 
 echo ""
-echo "--- AC-4 Fall 3: Seq ist monoton steigend bei gleicher Transaktion ---"
-$PSQL <<SQL >/dev/null
-INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
-VALUES ('$PROFILE_ID', 'vehicle_data', true, now());
-INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
-VALUES ('$PROFILE_ID', 'vehicle_data', false, now());
-SQL
-SEQ_ORDER=$($PSQL <<SQL
-SELECT string_agg(granted::text, ',' ORDER BY seq DESC) FROM consent_records
-WHERE customer_id = '$PROFILE_ID' AND consent_type = 'vehicle_data';
-SQL
-)
-if echo "$SEQ_ORDER" | grep -qE "^(f|false),(t|true)"; then
-  echo "  ok   Seq-Ordnung korrekt: neueste Zeile (granted=false) hat höchste seq"
-else
-  echo "  FAIL Seq-Ordnung falsch: $SEQ_ORDER"
-  ((FAIL++))
-fi
+echo "=== Fall (b): granted=false → gilt nicht ==="
 
-echo ""
-echo "--- AC-4 Fall 4: Re-Grant nach Widerruf ---"
 $PSQL <<SQL >/dev/null
+DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'marketing';
 INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
-VALUES ('$PROFILE_ID', 'proactive_contact', true, now() - interval '60 days');
-INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
-VALUES ('$PROFILE_ID', 'proactive_contact', false, now() - interval '30 days');
-INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
-VALUES ('$PROFILE_ID', 'proactive_contact', true, now());
+VALUES ('$CID', 'marketing', false, now());
 SQL
-LATEST_PROACTIVE=$($PSQL <<SQL
-SELECT granted FROM consent_records
-WHERE customer_id = '$PROFILE_ID' AND consent_type = 'proactive_contact'
+RESULT_B=$($PSQL <<SQL
+SELECT granted, revoked_at IS NULL AS no_revoke, seq
+FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'marketing'
 ORDER BY seq DESC LIMIT 1;
 SQL
 )
-if [ "$LATEST_PROACTIVE" = "t" ]; then
-  echo "  ok   Re-Grant: letzte Zeile per seq ist granted=true"
-else
-  echo "  FAIL Re-Grant: letzte Zeile ist nicht granted=true: $LATEST_PROACTIVE"
-  ((FAIL++))
-fi
+echo "  raw: $RESULT_B"
+echo "$RESULT_B" | grep -qE "^f\|" && echo "  ok   granted=false → gilt nicht" || { echo "  FAIL"; ((FAIL++)); }
+
+echo ""
+echo "=== Fall (c): Same-transaction seq ordering ==="
+
+$PSQL <<SQL >/dev/null
+DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'cross_channel';
+SQL
+
+# Echte Transaktion: BEGIN/COMMIT
+$PSQL <<SQL >/dev/null
+BEGIN;
+INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
+VALUES ('$CID', 'cross_channel', true, '2026-06-15 14:00:00');
+INSERT INTO consent_records (customer_id, consent_type, granted, granted_at, revoked_at)
+VALUES ('$CID', 'cross_channel', true, '2026-06-15 14:00:00', '2026-06-15 14:00:00');
+COMMIT;
+SQL
+
+ROWS_C=$($PSQL <<SQL
+SELECT granted, revoked_at IS NOT NULL AS has_revoked, granted_at, seq
+FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'cross_channel'
+ORDER BY seq DESC;
+SQL
+)
+echo "  raw (seq DESC):"
+echo "$ROWS_C" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line"; done
+
+TS_COUNT=$($PSQL <<SQL
+SELECT count(DISTINCT granted_at) FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'cross_channel';
+SQL
+)
+echo "  distinct granted_at: $TS_COUNT (erwartet: 1 = gleicher Zeitstempel)"
+
+LATEST_REVOKED=$($PSQL <<SQL
+SELECT revoked_at IS NOT NULL FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'cross_channel'
+ORDER BY seq DESC LIMIT 1;
+SQL
+)
+[ "$LATEST_REVOKED" = "t" ] && echo "  ok   Fall (c): Widerruf nach Erteilung (gleiche TX) → gilt nicht" || { echo "  FAIL latest should be revoked: $LATEST_REVOKED"; ((FAIL++)); }
+
+echo ""
+echo "=== Fall (d): Re-grant nach Widerruf → gilt ==="
+
+$PSQL <<SQL >/dev/null
+DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'data_retention';
+INSERT INTO consent_records (customer_id, consent_type, granted, granted_at, revoked_at)
+VALUES ('$CID', 'data_retention', true, now() - interval '1 hour', now() - interval '30 minutes');
+INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
+VALUES ('$CID', 'data_retention', true, now());
+SQL
+RESULT_D=$($PSQL <<SQL
+SELECT granted, revoked_at IS NULL AS no_revoke, seq
+FROM consent_records
+WHERE customer_id = '$CID' AND consent_type = 'data_retention'
+ORDER BY seq DESC LIMIT 1;
+SQL
+)
+echo "  raw: $RESULT_D"
+echo "$RESULT_D" | grep -qE "^t\|t\|" && echo "  ok   Fall (d): Re-grant → gilt" || { echo "  FAIL"; ((FAIL++)); }
 
 echo ""
 if [ "$FAIL" -gt 0 ]; then
