@@ -46,12 +46,54 @@ describe('SPEC-041 AC-2: Config tables deny anon/authenticated', () => {
 })
 
 describe('SPEC-041 AC-3: Functions and views deny anon/authenticated', () => {
-  it('increment_session_cost REVOKE in migration 029', () => {
-    expect('REVOKE EXECUTE ON FUNCTION increment_session_cost').toBeTruthy()
+  it('migration 043 revokes EXECUTE from PUBLIC on all functions', async () => {
+    const fs = await import('node:fs')
+    const m043 = fs.readFileSync(
+      new URL('../../../../supabase/migrations/043_function_grants_hardening.sql', import.meta.url),
+      'utf-8',
+    )
+    expect(m043).toContain('REVOKE EXECUTE ON FUNCTION increment_session_cost')
+    expect(m043).toContain('FROM PUBLIC')
+    expect(m043).toContain('REVOKE EXECUTE ON FUNCTION update_updated_at')
   })
 
-  it('session_cost_stats REVOKE in migration 029', () => {
-    expect('REVOKE SELECT ON session_cost_stats').toBeTruthy()
+  it('migration 043 sets default privileges to deny PUBLIC EXECUTE', async () => {
+    const fs = await import('node:fs')
+    const m043 = fs.readFileSync(
+      new URL('../../../../supabase/migrations/043_function_grants_hardening.sql', import.meta.url),
+      'utf-8',
+    )
+    expect(m043).toContain('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC')
+  })
+
+  it('migration 043 grants EXECUTE only to service_role', async () => {
+    const fs = await import('node:fs')
+    const m043 = fs.readFileSync(
+      new URL('../../../../supabase/migrations/043_function_grants_hardening.sql', import.meta.url),
+      'utf-8',
+    )
+    expect(m043).toContain('GRANT EXECUTE ON FUNCTION increment_session_cost')
+    expect(m043).toContain('TO service_role')
+  })
+
+  it('increment_session_cost rejects negative p_cost_delta', async () => {
+    const fs = await import('node:fs')
+    const m043 = fs.readFileSync(
+      new URL('../../../../supabase/migrations/043_function_grants_hardening.sql', import.meta.url),
+      'utf-8',
+    )
+    expect(m043).toContain('p_cost_delta < 0')
+    expect(m043).toContain('RAISE EXCEPTION')
+    expect(m043).toContain('must be >= 0')
+  })
+
+  it('session_cost_stats REVOKE in migration 029', async () => {
+    const fs = await import('node:fs')
+    const m029 = fs.readFileSync(
+      new URL('../../../../supabase/migrations/029_rls_all_tables.sql', import.meta.url),
+      'utf-8',
+    )
+    expect(m029).toContain('REVOKE SELECT ON session_cost_stats FROM anon, authenticated')
   })
 })
 
@@ -65,6 +107,46 @@ describe('SPEC-041 AC-4: CI RLS enforcement step', () => {
     expect(content).toContain('Verify RLS on all public tables')
     expect(content).toContain('relrowsecurity')
     expect(content).toContain('RLS ENFORCEMENT PASSED')
+  })
+
+  it('db-verify.yml checks function EXECUTE privileges (G3)', async () => {
+    const fs = await import('node:fs')
+    const content = fs.readFileSync(
+      new URL('../../../../.github/workflows/db-verify.yml', import.meta.url),
+      'utf-8',
+    )
+    expect(content).toContain('has_function_privilege')
+    expect(content).toContain('FUNCTION EXECUTE CHECK PASSED')
+  })
+
+  it('db-verify.yml stubs replicate Supabase default grants (G1)', async () => {
+    const fs = await import('node:fs')
+    const content = fs.readFileSync(
+      new URL('../../../../.github/workflows/db-verify.yml', import.meta.url),
+      'utf-8',
+    )
+    expect(content).toContain('GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role')
+    expect(content).toContain('GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role')
+  })
+
+  it('db-verify.yml tests negative cost delta rejection (G2)', async () => {
+    const fs = await import('node:fs')
+    const content = fs.readFileSync(
+      new URL('../../../../.github/workflows/db-verify.yml', import.meta.url),
+      'utf-8',
+    )
+    expect(content).toContain('p_cost_delta < 0 rejected')
+    expect(content).toContain('must be >= 0')
+  })
+
+  it('db-verify.yml has negative test: service_role bypasses RLS', async () => {
+    const fs = await import('node:fs')
+    const content = fs.readFileSync(
+      new URL('../../../../.github/workflows/db-verify.yml', import.meta.url),
+      'utf-8',
+    )
+    expect(content).toContain('service_role bypasses RLS')
+    expect(content).toContain('service_role can SELECT model_config')
   })
 })
 
