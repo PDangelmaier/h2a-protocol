@@ -72,6 +72,22 @@ describe('SPEC-038: PII-Output-Filter', () => {
     it('rejects invalid Luhn 1234 5678 9012 3456', () => expectUnchanged('1234 5678 9012 3456'))
   })
 
+  describe('AC-2: Additional positive fixtures (40+ threshold)', () => {
+    it('masks BMW FIN WBA3A5C50FK123456', () => expectMasked('WBA3A5C50FK123456', 'fin'))
+    it('masks Audi FIN WAUZZZ8V9KA012345', () => expectMasked('WAUZZZ8V9KA012345', 'fin'))
+    it('masks FR AB 123 (plate)', () => expectMasked('FR AB 123', 'plate'))
+    it('masks DA XY 42 (plate)', () => expectMasked('DA XY 42', 'plate'))
+    it('masks OG CD 999H (H-Kennzeichen)', () => expectMasked('OG CD 999H', 'plate'))
+    it('masks info@firma.de (email)', () => expectMasked('info@firma.de', 'email'))
+    it('masks max.mustermann@web.de (email)', () => expectMasked('max.mustermann@web.de', 'email'))
+    it('masks +44 20 7123 4567 (UK phone)', () => expectMasked('+44 20 7123 4567', 'phone'))
+    it('masks 089-12345678 (München)', () => expectMasked('089-12345678', 'phone'))
+    it('masks +33 14 567 8901 (FR phone)', () => expectMasked('+33 14 567 8901', 'phone'))
+    it('masks AT61 1904 3002 3457 3201 (AT IBAN)', () => expectMasked('AT61 1904 3002 3457 3201', 'iban'))
+    it('masks LI21 0881 0000 2324 013AA (LI IBAN digit-only part)', () => expectMasked('LI21 0881 0000 2324 0133', 'iban'))
+    it('masks JCB 3530 1113 3330 0000 (Luhn)', () => expectMasked('3530 1113 3330 0000', 'card'))
+  })
+
   describe('AC-2: Masking format — last 4 chars', () => {
     it('FIN keeps last 4', () => {
       const { text } = filterPii('WDB2100612A123456')
