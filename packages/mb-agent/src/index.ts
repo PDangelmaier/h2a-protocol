@@ -62,3 +62,5 @@ export { classifyTurn, resolveRoutingPurpose, loadRoutingConfig, invalidateRouti
 export type { TurnComplexity, ClassificationResult, RoutingConfig } from './turn-classifier.js'
 export { loadAdversarialConversations, runAdversarialTurn, runConversation, VALID_DEFENSE_LAYERS } from './adversarial-runner.js'
 export type { AdversarialTurn, AdversarialConversation, TurnResult, ConversationResult } from './adversarial-runner.js'
+export { trackConversationState, loadLatestState, validateStateOutput, checkDoubleNegativeEscalation, buildStateTrackingLayer, buildEscalationHint } from './state-tracking.js'
+export type { ConversationState, Sentiment, Resolution, StateTrackingResult } from './state-tracking.js'

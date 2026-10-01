@@ -125,6 +125,12 @@ vi.mock('../cost-gate.js', () => ({
   checkTokenBudget: vi.fn().mockResolvedValue(true),
 }))
 
+vi.mock('../state-tracking.js', () => ({
+  trackConversationState: vi.fn().mockResolvedValue(null),
+  loadLatestState: vi.fn().mockResolvedValue(null),
+  buildEscalationHint: vi.fn().mockReturnValue(''),
+}))
+
 vi.mock('../summarization.js', () => ({
   needsSummarization: vi.fn().mockReturnValue(false),
   summarizeOlderTurns: vi.fn().mockResolvedValue(null),
