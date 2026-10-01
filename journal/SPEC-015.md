@@ -1,11 +1,12 @@
 ---
 spec: SPEC-015
 spec_version: 1
-status: REVIEW
+status: GEMERGT
 branch: feat/spec015-streaming-backpressure
 base_commit: c1620a3
 head_commit: 563a9e6
-last_updated: "2026-10-01T14:48:22+02:00"
+merge_commit: 87ba199
+last_updated: "2026-10-01T14:57:30+02:00"
 ---
 
 # SPEC-015: Streaming-Backpressure und Abbruch bei Client-Trennung
