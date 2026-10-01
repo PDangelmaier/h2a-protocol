@@ -81,7 +81,8 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
     )
 
     expect(result.error).toBe(true)
-    expect(result.data.message).toContain('nicht gefunden')
+    expect(result.data._h2a_tool_error).toBe(true)
+    expect(result.data.errorType).toBe('not_found')
   })
 
   it('multiple required consents: partial match → error with missing listed', async () => {
