@@ -46,3 +46,5 @@ export type { ToolRoundTrace, SoftLoopDetection, LoopTelemetryState, TraceEmitte
 export { getLangfuseConfig } from './langfuse.js'
 export { trackTtft, getSlaThreshold } from './ttft-tracking.js'
 export type { TtftMetrics, TtftTrackResult } from './ttft-tracking.js'
+export { needsSummarization, exceedsHardLimit, summarizeOlderTurns, loadLatestSummary, enforceHardLimit, buildHistoryWithSummary, estimateSessionTokens, getSummarizationConfig } from './summarization.js'
+export type { SummarizationConfig, ConversationSummary } from './summarization.js'

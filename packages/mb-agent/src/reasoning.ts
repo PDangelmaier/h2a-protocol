@@ -23,6 +23,7 @@ import type { OnStatusEvent } from './tool-status.js'
 import { extractMemories } from './memory-extraction.js'
 import { createLoopState, recordToolRound, checkSoftLoop, buildSoftLoopHint, emitTraceEvent, emitSoftLoopEvent, createLangfuseEmitter, createStructuredLogEmitter } from './loop-telemetry.js'
 import type { TraceEmitter } from './loop-telemetry.js'
+import { needsSummarization, summarizeOlderTurns, loadLatestSummary, enforceHardLimit, buildHistoryWithSummary, estimateSessionTokens, getSummarizationConfig } from './summarization.js'
 
 interface SessionState {
   id: string
@@ -88,7 +89,20 @@ export async function reasoningLoop(
   const { personality, intent, memories, promptVersion } = await computeIntelligence(context, session, supabase)
   const systemPromptWithCanary = injectCanary(personality.systemPrompt, session.id)
   const tools = await getAvailableTools(context, supabase)
-  const nexusRequest = await buildNexusRequest(session, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
+
+  const existingSummary = await loadLatestSummary(session.id, supabase)
+  const historyWithSummary = buildHistoryWithSummary(existingSummary, session.conversationHistory)
+  const sessionWithSummary = { ...session, conversationHistory: historyWithSummary }
+
+  const toolTokenEstimate = tools.length > 0 ? estimateSessionTokens('', [], tools.length * 200) : 0
+  const hardLimitHistory = enforceHardLimit(
+    systemPromptWithCanary,
+    historyWithSummary,
+    toolTokenEstimate,
+  )
+  const sessionForRequest = { ...sessionWithSummary, conversationHistory: hardLimitHistory }
+
+  const nexusRequest = await buildNexusRequest(sessionForRequest, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
 
   const costCheck = await checkCostLimit(session.id, supabase, session.locale)
   if (costCheck.exceeded) {
@@ -151,6 +165,19 @@ export async function reasoningLoop(
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[extractMemories] session=${session.id}: ${msg}`)
   })
+
+  const allTurns = [
+    ...session.conversationHistory.map((m, i) => ({ role: m.role as 'user' | 'assistant', content: m.content, sequence: i + 1 })),
+    { role: 'user' as const, content: signal.content, sequence: session.conversationHistory.length + 1 },
+    { role: 'assistant' as const, content: response.text, sequence: session.conversationHistory.length + 2 },
+  ]
+  const postTurnEstimate = estimateSessionTokens(systemPromptWithCanary, allTurns, toolTokenEstimate)
+  if (needsSummarization(postTurnEstimate)) {
+    summarizeOlderTurns(session.id, allTurns, config.nexus, supabase).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[summarization] session=${session.id}: ${msg}`)
+    })
+  }
 
   return {
     response: response.text,
