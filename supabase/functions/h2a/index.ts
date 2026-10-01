@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions, createExperiment, startExperiment, stopExperiment, loadActiveExperiments, invalidateExperimentCache, ClientDisconnectedError } from '@h2a/mb-agent'
+import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions, createExperiment, startExperiment, stopExperiment, loadActiveExperiments, invalidateExperimentCache } from '@h2a/mb-agent'
 import type { PiiHit, StatusEvent, TtftMetrics } from '@h2a/mb-agent'
-import { SseBuffer } from '@h2a/core'
-import type { SseFrame } from '@h2a/core'
+import { SseBuffer } from '@h2a/core/sse-buffer'
 
 const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
 const OPTIONAL_VARS = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL'] as const
