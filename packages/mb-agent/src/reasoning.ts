@@ -11,6 +11,7 @@ import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
 import { FallbackChainExhaustedError, FallbackTimeoutError } from './fallback.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
+import { buildToolError } from './tool-errors.js'
 import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
 import { sanitizeInput } from './input-sanitizer.js'
@@ -19,6 +20,7 @@ import type { DegradationReason } from './degradation.js'
 import { buildCanary, injectCanary, validateOutput } from './output-validator.js'
 import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
 import { loadPromptCacheConfig, applyCacheToRequest, callWithCacheFallback } from './prompt-cache.js'
+import { pruneTools, loadPruningConfig } from './tool-pruning.js'
 import { loadToolStatusMessages, buildStatusEvent } from './tool-status.js'
 import type { OnStatusEvent } from './tool-status.js'
 import { extractMemories } from './memory-extraction.js'
@@ -89,8 +91,16 @@ export async function reasoningLoop(
   const context = await loadContext(session, supabase)
   const { personality, intent, memories, promptVersion, promptBuild } = await computeIntelligence(context, session, supabase)
   const systemPromptWithCanary = injectCanary(personality.systemPrompt, session.id)
-  const tools = await getAvailableTools(context, supabase)
-  const cacheConfig = await loadPromptCacheConfig(supabase)
+  const allTools = await getAvailableTools(context, supabase)
+  const [cacheConfig, pruningConfig] = await Promise.all([
+    loadPromptCacheConfig(supabase),
+    loadPruningConfig(supabase),
+  ])
+  const tools = pruneTools(allTools, {
+    journeyPhase: session.journeyPhase,
+    channel: session.channel,
+    userMessage: signal.content,
+  }, pruningConfig.maxTools)
 
   const existingSummary = await loadLatestSummary(session.id, supabase)
   const historyWithSummary = buildHistoryWithSummary(existingSummary, session.conversationHistory)
@@ -130,7 +140,8 @@ export async function reasoningLoop(
 
   let response: ProcessedResponse
   try {
-    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase, onStatusEvent)
+    const offeredToolNames = new Set(tools.map(t => t.toolName))
+    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase, offeredToolNames, onStatusEvent)
   } catch (err) {
     const reason: DegradationReason =
       err instanceof FallbackChainExhaustedError || err instanceof FallbackTimeoutError
@@ -315,6 +326,7 @@ async function processResponse(
   profileId: string,
   locale: string,
   supabase: SupabaseClient,
+  offeredToolNames: Set<string>,
   onStatusEvent?: OnStatusEvent,
 ): Promise<ProcessedResponse> {
   const toolsUsed: string[] = []
@@ -361,6 +373,11 @@ async function processResponse(
     const toolResults = await Promise.all(
       fbResult.toolCalls.map(async (call) => {
         toolsUsed.push(call.name)
+        if (offeredToolNames.size > 0 && !offeredToolNames.has(call.name)) {
+          const result = buildToolError('not_offered', call.name, 0, locale)
+          const delimited = { _h2a_tool_data: true, tool: call.name, data: result.data }
+          return { toolUseId: call.id, content: [{ json: delimited }], truncatedSize: JSON.stringify(result.data).length }
+        }
         const toolResult = await executeToolWithConsent(
           { toolId: call.id, input: call.input },
           profileId,

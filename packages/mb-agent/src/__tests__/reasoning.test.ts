@@ -85,6 +85,17 @@ vi.mock('../prompt-cache.js', () => ({
   }),
 }))
 
+vi.mock('../tool-pruning.js', () => ({
+  loadPruningConfig: vi.fn().mockResolvedValue({ maxTools: 8 }),
+  pruneTools: vi.fn().mockImplementation((tools: unknown[]) => tools),
+}))
+
+vi.mock('../tool-errors.js', () => ({
+  buildToolError: vi.fn().mockReturnValue({ error: true, data: { _h2a_tool_error: true, errorType: 'not_offered', toolName: 'unknown', durationMs: 0, suggestedAction: 'Use offered tools.' } }),
+  classifyToolError: vi.fn().mockReturnValue('upstream_error'),
+  sanitizeErrorForModel: vi.fn().mockImplementation((e: unknown) => String(e)),
+}))
+
 const mockExecuteTool = vi.fn()
 vi.mock('../tools.js', () => ({
   getAvailableTools: vi.fn().mockResolvedValue([]),
@@ -397,5 +408,36 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
       expect.anything(),
       'de-DE',
     )
+  })
+
+  it('AC-3 SPEC-010: returns not_offered error when model calls tool not in pruned set', async () => {
+    const { pruneTools } = await import('../tool-pruning.js')
+    vi.mocked(pruneTools).mockReturnValueOnce([
+      { id: 't-1', toolName: 'offered_tool', allowedChannels: [], allowedJourneyPhases: [], topics: [], displayName: '', description: '', endpointType: '', endpointUrl: '', inputSchema: {}, minPidScore: 0, requiresConsent: [], timeoutSeconds: 5, riskLevel: 'normal' },
+    ])
+
+    const { getAvailableTools } = await import('../tools.js')
+    vi.mocked(getAvailableTools).mockResolvedValueOnce([
+      { id: 't-1', toolName: 'offered_tool', allowedChannels: [], allowedJourneyPhases: [], topics: [], displayName: '', description: '', endpointType: '', endpointUrl: '', inputSchema: {}, minPidScore: 0, requiresConsent: [], timeoutSeconds: 5, riskLevel: 'normal' },
+      { id: 't-2', toolName: 'hidden_tool', allowedChannels: [], allowedJourneyPhases: [], topics: [], displayName: '', description: '', endpointType: '', endpointUrl: '', inputSchema: {}, minPidScore: 0, requiresConsent: [], timeoutSeconds: 5, riskLevel: 'normal' },
+    ])
+
+    mockNexusSync
+      .mockResolvedValueOnce({
+        text: '',
+        toolCalls: [{ id: 'tc-np', name: 'hidden_tool', input: {} }],
+        stopReason: 'tool_use',
+        inputTokens: 10, outputTokens: 5,
+      })
+      .mockResolvedValueOnce({
+        text: 'Antwort ohne das Tool.',
+        toolCalls: [], stopReason: 'end_turn',
+        inputTokens: 50, outputTokens: 10,
+      })
+
+    const { buildToolError } = await import('../tool-errors.js')
+    await reasoningLoop(session, signal, config)
+    expect(vi.mocked(buildToolError)).toHaveBeenCalledWith('not_offered', 'hidden_tool', 0, 'de-DE')
+    expect(mockExecuteTool).not.toHaveBeenCalled()
   })
 })

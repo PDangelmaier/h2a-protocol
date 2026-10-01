@@ -3,6 +3,7 @@ import type { ToolResult } from './types.js'
 export type ToolErrorType =
   | 'timeout'
   | 'not_found'
+  | 'not_offered'
   | 'invalid_input'
   | 'unauthorized'
   | 'consent_missing'
@@ -22,6 +23,10 @@ const SUGGESTED_ACTIONS: Record<ToolErrorType, SuggestedAction> = {
   not_found: {
     de: 'Das angeforderte Tool existiert nicht. Nutzen Sie ein anderes Tool oder antworten Sie ohne Tool.',
     en: 'The requested tool does not exist. Use a different tool or respond without one.',
+  },
+  not_offered: {
+    de: 'Dieses Tool steht in der aktuellen Sitzung nicht zur Verfügung. Nutzen Sie eines der angebotenen Tools.',
+    en: 'This tool is not available in the current session. Use one of the offered tools.',
   },
   invalid_input: {
     de: 'Die Eingabeparameter sind ungültig. Überprüfen Sie die Parameter und versuchen Sie es erneut.',
