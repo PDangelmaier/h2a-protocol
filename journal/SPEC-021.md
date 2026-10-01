@@ -102,7 +102,12 @@ Keine.
 
 ## CI Evidence
 
-_(wird nach Push ergänzt)_
+```
+$ gh pr checks 38
+tests      pass  28s  https://github.com/PDangelmaier/h2a-protocol/actions/runs/36861997242
+db-verify  pass  35s  https://github.com/PDangelmaier/h2a-protocol/actions/runs/36861996962
+merge-gate fail  2s   (erwartet — Label fehlt noch)
+```
 
 ## Offene Punkte
 
