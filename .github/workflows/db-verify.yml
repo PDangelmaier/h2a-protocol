@@ -55,9 +55,23 @@ jobs:
               CREATE ROLE anon NOLOGIN;
             END IF;
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
-              CREATE ROLE service_role NOLOGIN;
+              CREATE ROLE service_role NOLOGIN BYPASSRLS;
             END IF;
           END $$;
+
+          -- G1: Replicate Supabase default grants so that RLS (not missing GRANTs)
+          -- is what blocks anon/authenticated access.
+          -- Supabase grants table/sequence access per role, but function EXECUTE
+          -- comes via PUBLIC (PostgreSQL default) — not per-role grants.
+          GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+          GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+          GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+
+          -- service_role bypasses RLS (Supabase default)
+          ALTER ROLE service_role SET "request.jwt.claim.role" = 'service_role';
+
           CREATE SCHEMA IF NOT EXISTS auth;
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid AS $f$
             SELECT '00000000-0000-0000-0000-000000000000'::uuid;
@@ -267,48 +281,119 @@ jobs:
           FAIL=0
           CONFIG_TABLES="model_config agent_tools ccp_personalities ccp_routing_rules ccp_deployments cost_gate_config degradation_config enrichment_cache"
 
+          echo "--- G1: RLS blocks SELECT (returns 0 rows, not permission denied) ---"
           for role in anon authenticated; do
-            echo "--- Testing role: $role ---"
+            echo "  role: $role"
             for tbl in $CONFIG_TABLES; do
-              RESULT=$($PSQL -c "SET ROLE $role; SELECT count(*) FROM $tbl;" 2>&1 || true)
-              if echo "$RESULT" | grep -qi "permission denied\|new row violates"; then
-                echo "  ok   $role cannot SELECT $tbl"
+              ROW_COUNT=$($PSQL -c "SET ROLE $role; SELECT count(*) FROM $tbl;" 2>&1 || true)
+              $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+              if echo "$ROW_COUNT" | grep -qE "^0$"; then
+                echo "    ok   $tbl → 0 rows"
+              elif echo "$ROW_COUNT" | grep -qi "permission denied"; then
+                echo "    ok   $tbl → permission denied"
               else
-                echo "  FAIL $role CAN SELECT $tbl: $RESULT"
+                echo "    FAIL $tbl → $ROW_COUNT"
                 FAIL=$((FAIL + 1))
               fi
-              $PSQL -c "RESET ROLE;" >/dev/null 2>&1
             done
           done
 
           echo ""
-          echo "--- Testing function: increment_session_cost ---"
+          echo "--- G1 negative test: service_role bypasses RLS ---"
+          $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          SVC_COUNT=$($PSQL -c "SET LOCAL ROLE service_role; SELECT count(*) FROM model_config;" 2>&1 | grep -E '^[0-9]+$' | head -1 || true)
+          $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          if [ -n "$SVC_COUNT" ] && [ "$SVC_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "  ok   service_role can SELECT model_config ($SVC_COUNT rows)"
+          else
+            echo "  FAIL service_role should see rows in model_config: $SVC_COUNT"
+            FAIL=$((FAIL + 1))
+          fi
+
+          echo ""
+          echo "--- G2: Functions not executable by anon/authenticated ---"
           for role in anon authenticated; do
             RESULT=$($PSQL -c "SET ROLE $role; SELECT * FROM increment_session_cost('test', 0.01);" 2>&1 || true)
+            $PSQL -c "RESET ROLE;" >/dev/null 2>&1
             if echo "$RESULT" | grep -qi "permission denied"; then
               echo "  ok   $role cannot execute increment_session_cost"
             else
               echo "  FAIL $role CAN execute increment_session_cost: $RESULT"
               FAIL=$((FAIL + 1))
             fi
-            $PSQL -c "RESET ROLE;" >/dev/null 2>&1
           done
+
+          echo ""
+          echo "--- G2: p_cost_delta < 0 rejected ---"
+          $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          NEG_RESULT=$($PSQL -c "SET ROLE service_role; SELECT * FROM increment_session_cost('nonexistent', -1.0);" 2>&1 || true)
+          $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          if echo "$NEG_RESULT" | grep -qi "must be >= 0"; then
+            echo "  ok   negative cost delta rejected"
+          else
+            echo "  FAIL negative cost delta NOT rejected: $NEG_RESULT"
+            FAIL=$((FAIL + 1))
+          fi
 
           echo ""
           echo "--- Testing view: session_cost_stats ---"
           for role in anon authenticated; do
             RESULT=$($PSQL -c "SET ROLE $role; SELECT * FROM session_cost_stats;" 2>&1 || true)
+            $PSQL -c "RESET ROLE;" >/dev/null 2>&1
             if echo "$RESULT" | grep -qi "permission denied"; then
               echo "  ok   $role cannot SELECT session_cost_stats"
             else
               echo "  FAIL $role CAN SELECT session_cost_stats: $RESULT"
               FAIL=$((FAIL + 1))
             fi
-            $PSQL -c "RESET ROLE;" >/dev/null 2>&1
           done
 
           if [ "$FAIL" -gt 0 ]; then echo "FAIL: $FAIL role-check(s)"; exit 1; fi
           echo "ROLE CHECKS PASSED"
+
+      - name: Verify no function EXECUTE for public/anon/authenticated (G3)
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          PGPASSWORD: verify_pass
+        run: |
+          PSQL="psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -t -A"
+          FAIL=0
+          ALLOWED_FUNCTIONS=""
+
+          echo "--- G3: No user-defined function in public with EXECUTE for PUBLIC, anon, or authenticated ---"
+          LEAKED=$($PSQL -c "
+            WITH func_grants AS (
+              SELECT p.proname,
+                     (aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner)))).grantee AS grantee_oid
+              FROM pg_proc p
+              JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public'
+                AND p.proname NOT IN (SELECT unnest(string_to_array('$ALLOWED_FUNCTIONS', ',')))
+                -- Exclude extension-owned functions (pgvector, uuid-ossp, pgcrypto, etc.)
+                AND NOT EXISTS (
+                  SELECT 1 FROM pg_depend d
+                  JOIN pg_extension e ON e.oid = d.refobjid
+                  WHERE d.objid = p.oid AND d.deptype = 'e'
+                )
+            )
+            SELECT fg.proname,
+                   CASE WHEN fg.grantee_oid = 0 THEN 'PUBLIC' ELSE r.rolname END AS grantee
+            FROM func_grants fg
+            LEFT JOIN pg_roles r ON r.oid = fg.grantee_oid
+            WHERE fg.grantee_oid = 0
+               OR r.rolname IN ('anon', 'authenticated')
+            ORDER BY fg.proname, grantee;
+          ")
+
+          if [ -n "$LEAKED" ]; then
+            echo "FAIL: Functions with EXECUTE grants that should not exist:"
+            echo "$LEAKED" | while IFS='|' read -r fname rname; do
+              [ -n "$fname" ] && echo "  ✘ $fname → $rname" && FAIL=$((FAIL + 1))
+            done
+            exit 1
+          fi
+          echo "  ok   no leaked EXECUTE privileges"
+          echo "FUNCTION EXECUTE CHECK PASSED"
 
       - name: Verify migration immutability (SPEC-041)
         env:
