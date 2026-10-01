@@ -4,3 +4,4 @@ export { usePresence, type PresenceInfo } from "./usePresence.js";
 export { useFrames, type UseFramesOptions } from "./useFrames.js";
 export { PresenceIndicator } from "./PresenceIndicator.js";
 export { H2AChat } from "./H2AChat.js";
+export { StatusIndicator } from "./StatusIndicator.js";

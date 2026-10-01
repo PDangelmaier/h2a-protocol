@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://h2a-protocol.dev/schema/status-event.json",
+  "title": "H2A Status Event",
+  "description": "SSE event sent during tool rounds to indicate work in progress (SPEC-002)",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "status"
+    },
+    "toolsInProgress": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Tool names currently being executed"
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Current tool round (1-based)"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable status message from tool configuration"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds when the event was emitted"
+    }
+  },
+  "required": ["type", "toolsInProgress", "round", "message", "ts"],
+  "additionalProperties": false
+}

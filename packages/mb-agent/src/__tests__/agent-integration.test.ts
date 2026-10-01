@@ -312,6 +312,6 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
     expect(edgeSrc).not.toContain('resolveActiveModel')
     expect(edgeSrc).not.toContain('extractTextDelta')
     expect(edgeSrc).not.toContain('persistStreamedTurn')
-    expect(edgeSrc).toContain('reasoningLoop(sessionState, userSignal, agentConfig)')
+    expect(edgeSrc).toContain('reasoningLoop(sessionState, userSignal, agentConfig, onStatusEvent)')
   })
 })

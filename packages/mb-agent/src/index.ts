@@ -32,3 +32,5 @@ export { buildToolError, sanitizeErrorForModel, classifyToolError } from './tool
 export type { ToolErrorType, ToolError } from './tool-errors.js'
 export { buildDegradedResponse, formatDegradedForCustomer } from './degradation.js'
 export type { DegradationReason } from './degradation.js'
+export { loadToolStatusMessages, resolveStatusMessage, buildStatusEvent, clearToolStatusCache } from './tool-status.js'
+export type { StatusEvent, OnStatusEvent } from './tool-status.js'

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { reasoningLoop, filterPii } from '@h2a/mb-agent'
-import type { PiiHit } from '@h2a/mb-agent'
+import type { PiiHit, StatusEvent } from '@h2a/mb-agent'
 
 const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
 const OPTIONAL_VARS = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL'] as const
@@ -224,8 +224,12 @@ async function handleStream(req: Request): Promise<Response> {
     async start(controller) {
       sendSseEvent(controller, { type: 'presence.update', state: 'conversing' })
 
+      const onStatusEvent = (event: StatusEvent) => {
+        sendSseEvent(controller, { type: 'status', ...event })
+      }
+
       try {
-        const result = await reasoningLoop(sessionState, userSignal, agentConfig)
+        const result = await reasoningLoop(sessionState, userSignal, agentConfig, onStatusEvent)
 
         if (result.securityEvents && result.securityEvents.length > 0) {
           for (const ev of result.securityEvents) {
