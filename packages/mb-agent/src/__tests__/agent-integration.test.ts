@@ -283,7 +283,8 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
       'utf-8',
     )
 
-    expect(edgeSrc).toContain("import { reasoningLoop } from '@h2a/mb-agent'")
+    expect(edgeSrc).toContain("reasoningLoop")
+    expect(edgeSrc).toContain("from '@h2a/mb-agent'")
     expect(edgeSrc).not.toContain('buildMinimalSystemPrompt')
     expect(edgeSrc).not.toContain('resolveActiveModel')
     expect(edgeSrc).not.toContain('extractTextDelta')

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop } from '@h2a/mb-agent'
+import { reasoningLoop, filterPii } from '@h2a/mb-agent'
+import type { PiiHit } from '@h2a/mb-agent'
 
 const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
 const OPTIONAL_VARS = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL'] as const
@@ -211,25 +212,33 @@ async function handleStream(req: Request): Promise<Response> {
   }
 
   const encoder = new TextEncoder()
+
+  function sendSseEvent(controller: ReadableStreamDefaultController, event: Record<string, unknown>): void {
+    const filtered = filterSseEvent(event)
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(filtered.event)}\n\n`))
+    if (filtered.piiHits.length > 0) {
+      const piiEvent = { type: 'pii_masked', hits: filtered.piiHits }
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(piiEvent)}\n\n`))
+    }
+  }
+
   const stream = new ReadableStream({
     async start(controller) {
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'presence.update', state: 'conversing' })}\n\n`))
+      sendSseEvent(controller, { type: 'presence.update', state: 'conversing' })
 
       try {
         const result = await reasoningLoop(sessionState, userSignal, agentConfig)
 
-        const frame = {
+        sendSseEvent(controller, {
           type: 'agent.frame',
           frameType: 'text',
           content: { text: result.response, streaming: false },
-        }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
+        })
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'agent.frame', frameType: 'end', content: {} })}\n\n`))
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'presence.update', state: 'attentive' })}\n\n`))
+        sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
+        sendSseEvent(controller, { type: 'presence.update', state: 'attentive' })
       } catch (err) {
-        const errFrame = { type: 'agent.frame', frameType: 'error', content: { message: String(err) } }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(errFrame)}\n\n`))
+        sendSseEvent(controller, { type: 'agent.frame', frameType: 'error', content: { message: String(err) } })
       } finally {
         controller.close()
       }
@@ -380,6 +389,30 @@ async function handleAdminModels(req: Request, path: string): Promise<Response> 
   }
 
   return jsonResponse({ error: 'Not found' }, 404)
+}
+
+function filterSseEvent(event: Record<string, unknown>): { event: Record<string, unknown>; piiHits: PiiHit[] } {
+  const allHits: PiiHit[] = []
+
+  function filterValue(val: unknown): unknown {
+    if (typeof val === 'string') {
+      const { text, hits } = filterPii(val)
+      allHits.push(...hits)
+      return text
+    }
+    if (Array.isArray(val)) return val.map(filterValue)
+    if (val !== null && typeof val === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        out[k] = filterValue(v)
+      }
+      return out
+    }
+    return val
+  }
+
+  const filtered = filterValue(event) as Record<string, unknown>
+  return { event: filtered, piiHits: allHits }
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
