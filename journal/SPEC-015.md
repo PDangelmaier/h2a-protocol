@@ -4,7 +4,7 @@ spec_version: 1
 status: REVIEW
 branch: feat/spec015-streaming-backpressure
 base_commit: c1620a3
-head_commit: f5231bb
+head_commit: 563a9e6
 last_updated: "2026-10-01T14:48:22+02:00"
 ---
 
@@ -104,10 +104,16 @@ Keine.
 ## Commits
 
 - f5231bb: feat(SPEC-015): streaming backpressure and client disconnect abort
+- 563a9e6: fix(SPEC-015): add @h2a/core/sse-buffer to Deno import map
 
 ## CI Evidence
 
-Ausstehend — PR wird als nächstes erstellt.
+```
+$ gh pr checks 40
+tests      pass  29s  https://github.com/PDangelmaier/h2a-protocol/actions/runs/36864633833
+db-verify  pass  23s  https://github.com/PDangelmaier/h2a-protocol/actions/runs/36864633837
+merge-gate fail  3s   (erwartet — Label fehlt noch)
+```
 
 ## Offene Punkte
 
