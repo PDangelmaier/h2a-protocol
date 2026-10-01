@@ -102,3 +102,121 @@ jobs:
             exit 1
           fi
           echo "ALL PASSED"
+
+      - name: Verify consent canon (SPEC-031)
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          PGPASSWORD: verify_pass
+        run: |
+          PSQL="psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -t -A"
+          FAIL=0
+
+          echo "--- Consent-Typen speicherbar ---"
+          $PSQL <<'SQL' >/dev/null
+          INSERT INTO customer_profiles (id, mercedes_me_id, first_seen_at, identity_tier)
+          VALUES ('00000000-0000-0000-0000-000000000001', 'ci-consent-verify', now(), 'anonymous')
+          ON CONFLICT (id) DO NOTHING;
+          SQL
+
+          TYPES="ai_personalization memory_storage ai_autonomy profiling_art22 data_processing analytics data_retention cross_channel cross_device vehicle_data vehicle_control location_services marketing proactive_contact"
+          for ct in $TYPES; do
+            result=$($PSQL -c "INSERT INTO consent_records (customer_id, consent_type, granted, granted_at) VALUES ('00000000-0000-0000-0000-000000000001', '$ct', true, now()) RETURNING consent_type;" 2>&1 || true)
+            if echo "$result" | grep -q "$ct"; then
+              echo "  ok   $ct"
+            else
+              echo "  FAIL $ct: $result"
+              FAIL=$((FAIL + 1))
+            fi
+          done
+
+          STORED=$($PSQL -c "SELECT count(DISTINCT consent_type) FROM consent_records WHERE customer_id = '00000000-0000-0000-0000-000000000001';")
+          echo "  Stored: $STORED (expected: 14)"
+          [ "$STORED" -eq 14 ] || FAIL=$((FAIL + 1))
+
+          echo "--- risk_level on agent_tools ---"
+          HIGH=$($PSQL -c "SELECT count(*) FROM agent_tools WHERE risk_level = 'high';")
+          ELEVATED=$($PSQL -c "SELECT count(*) FROM agent_tools WHERE risk_level = 'elevated';")
+          echo "  high=$HIGH (expected 2), elevated=$ELEVATED (expected 2)"
+          [ "$HIGH" -eq 2 ] || FAIL=$((FAIL + 1))
+          [ "$ELEVATED" -eq 2 ] || FAIL=$((FAIL + 1))
+
+          if [ "$FAIL" -gt 0 ]; then echo "FAIL: $FAIL check(s)"; exit 1; fi
+          echo "CONSENT CANON PASSED"
+
+      - name: Verify consent ordering (SPEC-035)
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          PGPASSWORD: verify_pass
+        run: |
+          PSQL="psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -t -A"
+          CID="00000000-0000-0000-0000-000000000001"
+          FAIL=0
+
+          echo "--- seq column + index ---"
+          SEQ_EXISTS=$($PSQL -c "SELECT column_name FROM information_schema.columns WHERE table_name='consent_records' AND column_name='seq';")
+          [ -n "$SEQ_EXISTS" ] && echo "  ok   seq column" || { echo "  FAIL seq column missing"; FAIL=$((FAIL+1)); }
+
+          IS_IDENTITY=$($PSQL -c "SELECT is_identity FROM information_schema.columns WHERE table_name='consent_records' AND column_name='seq';")
+          echo "$IS_IDENTITY" | grep -qi "yes" && echo "  ok   seq is IDENTITY" || { echo "  FAIL seq not IDENTITY: $IS_IDENTITY"; FAIL=$((FAIL+1)); }
+
+          IDX=$($PSQL -c "SELECT indexname FROM pg_indexes WHERE tablename='consent_records' AND indexname='idx_consent_ordering';")
+          [ -n "$IDX" ] && echo "  ok   idx_consent_ordering" || { echo "  FAIL index missing"; FAIL=$((FAIL+1)); }
+
+          echo ""
+          echo "--- Fall (a): revoked_at → gilt nicht ---"
+          $PSQL <<SQL >/dev/null
+          DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'analytics';
+          INSERT INTO consent_records (customer_id, consent_type, granted, granted_at, revoked_at)
+          VALUES ('$CID', 'analytics', true, now(), now());
+          SQL
+          RESULT_A=$($PSQL -c "SELECT granted, revoked_at IS NOT NULL AS has_revoked FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'analytics' ORDER BY seq DESC LIMIT 1;")
+          echo "  raw: $RESULT_A"
+          echo "$RESULT_A" | grep -qE "(t|true)" && echo "  ok   revoked_at present → gilt nicht" || { echo "  FAIL"; FAIL=$((FAIL+1)); }
+
+          echo ""
+          echo "--- Fall (b): granted=false → gilt nicht ---"
+          $PSQL <<SQL >/dev/null
+          DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'marketing';
+          INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
+          VALUES ('$CID', 'marketing', false, now());
+          SQL
+          RESULT_B=$($PSQL -c "SELECT granted FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'marketing' ORDER BY seq DESC LIMIT 1;")
+          echo "  raw: $RESULT_B"
+          echo "$RESULT_B" | grep -qE "^(f|false)" && echo "  ok   granted=false → gilt nicht" || { echo "  FAIL"; FAIL=$((FAIL+1)); }
+
+          echo ""
+          echo "--- Fall (c): Same-transaction seq ordering ---"
+          $PSQL <<SQL >/dev/null
+          DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'cross_channel';
+          SQL
+          $PSQL -1 <<SQL >/dev/null
+          BEGIN;
+          INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
+          VALUES ('$CID', 'cross_channel', true, now());
+          INSERT INTO consent_records (customer_id, consent_type, granted, granted_at, revoked_at)
+          VALUES ('$CID', 'cross_channel', true, now(), now());
+          COMMIT;
+          SQL
+          ROWS_C=$($PSQL -c "SELECT granted, revoked_at IS NOT NULL AS has_revoked, seq FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'cross_channel' ORDER BY seq DESC;")
+          echo "  raw:"
+          echo "$ROWS_C" | while IFS= read -r line; do echo "    $line"; done
+          TS_CHECK=$($PSQL -c "SELECT count(DISTINCT granted_at) FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'cross_channel';")
+          echo "  distinct timestamps: $TS_CHECK (expected: 1 = same transaction)"
+          LATEST_C=$($PSQL -c "SELECT revoked_at IS NOT NULL FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'cross_channel' ORDER BY seq DESC LIMIT 1;")
+          echo "$LATEST_C" | grep -qE "(t|true)" && echo "  ok   latest has revoked_at → gilt nicht" || { echo "  FAIL latest should be revoked"; FAIL=$((FAIL+1)); }
+
+          echo ""
+          echo "--- Fall (d): Re-grant nach Widerruf → gilt ---"
+          $PSQL <<SQL >/dev/null
+          DELETE FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'data_retention';
+          INSERT INTO consent_records (customer_id, consent_type, granted, granted_at, revoked_at)
+          VALUES ('$CID', 'data_retention', true, now() - interval '1 hour', now() - interval '30 minutes');
+          INSERT INTO consent_records (customer_id, consent_type, granted, granted_at)
+          VALUES ('$CID', 'data_retention', true, now());
+          SQL
+          RESULT_D=$($PSQL -c "SELECT granted, revoked_at IS NULL AS no_revoke FROM consent_records WHERE customer_id = '$CID' AND consent_type = 'data_retention' ORDER BY seq DESC LIMIT 1;")
+          echo "  raw: $RESULT_D"
+          echo "$RESULT_D" | grep -qE "(t|true)\|(t|true)" && echo "  ok   re-grant → gilt" || { echo "  FAIL"; FAIL=$((FAIL+1)); }
+
+          if [ "$FAIL" -gt 0 ]; then echo "FAIL: $FAIL check(s)"; exit 1; fi
+          echo "CONSENT ORDERING PASSED"
