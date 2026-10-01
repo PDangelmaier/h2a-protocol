@@ -1,11 +1,12 @@
 ---
 spec: SPEC-021
 spec_version: 1
-status: REVIEW
+status: GEMERGT
 branch: feat/spec021-ab-testing
 base_commit: 844036f
-head_commit: afc0a86
-last_updated: "2026-10-01T14:24:33+02:00"
+head_commit: 113ec8f
+merge_commit: 3e26fb7
+last_updated: "2026-10-01T14:34:40+02:00"
 ---
 
 # SPEC-021: A/B-Tests für Prompt-Versionen
