@@ -50,7 +50,21 @@ Zeitstempel ausschließlich: `TZ=Europe/Berlin date -Iseconds`.
 4. Nach Label + grünen Checks: Merge per PR (Squash oder Merge-Commit nach Präferenz).
 5. Nach Merge: andere Branches rebasen, CODEMAP aktualisieren.
 
+### Secrets / Doppler (SPEC-037)
+
+Benötigte Doppler-Keys für `h2a/dev`:
+- `NEXUS_PRD_KEY` — Nexus API Key
+- `NEXUS_ENDPOINT` — Nexus Gateway URL
+- `SUPABASE_URL` — Supabase Project URL
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase Service Role
+- `LANGFUSE_PUBLIC_KEY` — (optional) Langfuse
+- `LANGFUSE_SECRET_KEY` — (optional) Langfuse
+- `LANGFUSE_BASE_URL` — (optional) Langfuse
+
+Live-Test: `pnpm test:live` (erfordert Doppler-CLI + `h2a/dev` Config)
+
 ### Hooks (Pflicht)
 - `scope-check` (pre-commit): geänderte Dateien gegen scope_paths der aktiven Spec; außerhalb → Commit nur mit Vermerk.
 - `ac-check` (pre-push): Anzahl und IDs der AC in Spec und `journal/SPEC-NNN.md` müssen übereinstimmen; jedes AC hat einen Testnamen.
 - `migration-check` (pre-commit): neue Migrationsnummer > höchste existierende.
+- `secret-scan` (pre-commit): prüft Staged Files auf bekannte Secret-Patterns.

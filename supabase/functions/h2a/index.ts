@@ -1,10 +1,23 @@
 import { createClient } from '@supabase/supabase-js'
 import { reasoningLoop } from '@h2a/mb-agent'
 
+const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
+const OPTIONAL_VARS = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL'] as const
+
+const missing = REQUIRED_VARS.filter(v => !Deno.env.get(v))
+if (missing.length > 0) {
+  throw new Error(`Missing required env vars: ${missing.join(', ')}`)
+}
+
+const optionalMissing = OPTIONAL_VARS.filter(v => !Deno.env.get(v))
+if (optionalMissing.length > 0) {
+  console.warn(`[h2a] Langfuse disabled — missing: ${optionalMissing.join(', ')}`)
+}
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const NEXUS_ENDPOINT = Deno.env.get('NEXUS_ENDPOINT')!
-const NEXUS_TOKEN = Deno.env.get('NEXUS_BEARER_TOKEN')!
+const NEXUS_TOKEN = Deno.env.get('NEXUS_PRD_KEY')!
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

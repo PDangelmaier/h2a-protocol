@@ -3,3 +3,8 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .playwright-mcp/
+
+# Secrets / environment
+.env
+.env.*
+.doppler/
