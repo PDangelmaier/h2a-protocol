@@ -8,11 +8,13 @@ import { resolveModel, resolveFallbackChain } from './model-config.js'
 import type { FallbackChainEntry } from './model-config.js'
 import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
-import { callWithFallback } from './fallback.js'
+import { callWithFallback, FallbackChainExhaustedError, FallbackTimeoutError } from './fallback.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
 import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
 import { sanitizeInput } from './input-sanitizer.js'
+import { buildDegradedResponse, formatDegradedForCustomer } from './degradation.js'
+import type { DegradationReason } from './degradation.js'
 import { injectCanary, validateOutput } from './output-validator.js'
 import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
 
@@ -50,6 +52,7 @@ interface ReasoningResult {
   toolsUsed: string[]
   newMemories: string[]
   securityEvents?: SecurityEvent[]
+  degraded?: { reason: DegradationReason }
 }
 
 export async function reasoningLoop(
@@ -81,17 +84,38 @@ export async function reasoningLoop(
 
   const costCheck = await checkCostLimit(session.id, supabase, session.locale)
   if (costCheck.exceeded) {
+    const degraded = await buildDegradedResponse('cost_limit', session.locale, supabase)
     return {
-      response: costCheck.shutdownMessage!,
+      response: formatDegradedForCustomer(degraded),
       intent,
       toolsUsed: [],
       newMemories: [],
       securityEvents: [],
+      degraded: { reason: 'cost_limit' },
     }
   }
 
   const fallbackChain = await resolveFallbackChain('main', supabase)
-  const response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase)
+
+  let response: ProcessedResponse
+  try {
+    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase)
+  } catch (err) {
+    const reason: DegradationReason =
+      err instanceof FallbackChainExhaustedError || err instanceof FallbackTimeoutError
+        ? 'fallback_exhausted'
+        : 'internal_error'
+
+    const degraded = await buildDegradedResponse(reason, session.locale, supabase)
+    return {
+      response: formatDegradedForCustomer(degraded),
+      intent,
+      toolsUsed: [],
+      newMemories: [],
+      securityEvents: [],
+      degraded: { reason },
+    }
+  }
 
   const outputCheck = validateOutput(response.text, session.id, session.locale)
   if (!outputCheck.safe) {
@@ -117,6 +141,7 @@ export async function reasoningLoop(
     toolsUsed: response.toolsUsed,
     newMemories: response.newMemories,
     securityEvents: [],
+    ...(response.degraded ? { degraded: response.degraded } : {}),
   }
 }
 
@@ -223,6 +248,7 @@ interface ProcessedResponse {
   text: string
   toolsUsed: string[]
   newMemories: string[]
+  degraded?: { reason: DegradationReason }
 }
 
 const MAX_TOOL_ROUNDS = 5
@@ -258,7 +284,8 @@ async function processResponse(
 
     const limitCheck = await checkCostLimit(sessionId, supabase, locale)
     if (limitCheck.exceeded) {
-      return { text: limitCheck.shutdownMessage!, toolsUsed, newMemories }
+      const degraded = await buildDegradedResponse('cost_limit', locale, supabase)
+      return { text: formatDegradedForCustomer(degraded), toolsUsed, newMemories, degraded: { reason: 'cost_limit' } }
     }
 
     const toolResults = await Promise.all(

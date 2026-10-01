@@ -233,6 +233,10 @@ async function handleStream(req: Request): Promise<Response> {
           }
         }
 
+        if (result.degraded) {
+          sendSseEvent(controller, { type: 'degraded_response', reason: result.degraded.reason })
+        }
+
         sendSseEvent(controller, {
           type: 'agent.frame',
           frameType: 'text',
@@ -242,7 +246,9 @@ async function handleStream(req: Request): Promise<Response> {
         sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
         sendSseEvent(controller, { type: 'presence.update', state: 'attentive' })
       } catch (err) {
-        sendSseEvent(controller, { type: 'agent.frame', frameType: 'error', content: { message: String(err) } })
+        sendSseEvent(controller, { type: 'agent.frame', frameType: 'error', content: { message: 'An unexpected error occurred' } })
+        sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
+        sendSseEvent(controller, { type: 'presence.update', state: 'attentive' })
       } finally {
         controller.close()
       }
