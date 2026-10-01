@@ -29,6 +29,8 @@ export { loadPromptCacheConfig, invalidatePromptCacheConfig, buildCachedSystemBl
 export type { PromptCacheConfig, CacheFallbackResult } from './prompt-cache.js'
 export { pruneTools, loadPruningConfig, invalidatePruningConfig, matchesChannel, matchesJourneyPhase, extractTopicMatches } from './tool-pruning.js'
 export type { PruningContext, PruningConfig, ScoredTool } from './tool-pruning.js'
+export { GUARDRAIL_FEW_SHOT_EXAMPLES, buildFewShotBlock } from './few-shot-guardrails.js'
+export type { GuardrailExample } from './few-shot-guardrails.js'
 export { filterPii, StreamPiiFilter } from './pii-filter.js'
 export type { PiiMaskResult, PiiHit, PiiType } from './pii-filter.js'
 export { sanitizeInput, normalizeInput, setGuardrailConfig, getGuardrailConfig } from './input-sanitizer.js'

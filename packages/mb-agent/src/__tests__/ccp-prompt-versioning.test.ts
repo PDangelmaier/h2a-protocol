@@ -70,7 +70,8 @@ describe('AC-6: static/dynamic split', () => {
       personality, customer, [], 'web', 'DE',
     )
 
-    expect(staticPart).toBe('Du bist der Mercedes-Benz Assistent.')
+    expect(staticPart).toContain('Du bist der Mercedes-Benz Assistent.')
+    expect(staticPart).toContain('Guardrail-Beispiele')
     expect(dynamicPart).toContain('Markt: DE')
     expect(dynamicPart).toContain('Max Mustermann')
     expect(dynamicPart).toContain('Sicherheitsregeln')
@@ -84,7 +85,7 @@ describe('AC-6: static/dynamic split', () => {
     )
 
     expect(staticPart).not.toContain('Max Mustermann')
-    expect(staticPart).not.toContain('EQS 450+')
+    expect(staticPart).not.toContain('PID-Score: 50')
     expect(staticPart).not.toContain('de-AT')
     expect(staticPart).not.toContain('Markt: DE')
   })
@@ -106,13 +107,13 @@ describe('AC-6: static/dynamic split', () => {
   })
 
   it('memories go into dynamic part, not static', () => {
-    const memories = [{ type: 'preference' as const, content: 'Bevorzugt AMG' }]
+    const memories = [{ type: 'preference' as const, content: 'Bevorzugt Limousinen' }]
     const { staticPart, dynamicPart } = buildSystemPromptSplit(
       personality, customer, memories, 'web', 'DE',
     )
 
-    expect(staticPart).not.toContain('AMG')
-    expect(dynamicPart).toContain('AMG')
+    expect(staticPart).not.toContain('Limousinen')
+    expect(dynamicPart).toContain('Limousinen')
   })
 })
 

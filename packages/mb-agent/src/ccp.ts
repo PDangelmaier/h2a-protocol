@@ -4,6 +4,7 @@ import type {
 } from './types.js'
 import { resolveActivePrompt } from './prompt-versioning.js'
 import type { PromptVersion } from './prompt-versioning.js'
+import { buildFewShotBlock } from './few-shot-guardrails.js'
 
 export interface ResolvedPersonalityWithVersion extends CCPPersonality {
   promptVersion: number | null
@@ -125,7 +126,7 @@ export function buildSystemPromptSplit(
   channel: Channel,
   market: string,
 ): PromptBuild {
-  const staticPart = personality.systemPrompt
+  const staticPart = `${personality.systemPrompt}\n\n${buildFewShotBlock()}`
 
   const dynamicLayers = [
     `Markt: ${market}. Sprache: ${customer.locale}.`,
