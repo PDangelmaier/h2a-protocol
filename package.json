@@ -15,6 +15,7 @@
     "build": "npm run -ws build",
     "test": "npm run -ws test",
     "db:verify": "bash scripts/db-verify.sh",
-    "db:verify-all": "KEEP_CONTAINER=1 bash scripts/db-verify.sh && bash scripts/db-verify-consent.sh && bash scripts/db-verify-consent-ordering.sh; docker rm -f h2a-db-verify 2>/dev/null || true"
+    "db:verify-all": "KEEP_CONTAINER=1 bash scripts/db-verify.sh && bash scripts/db-verify-consent.sh && bash scripts/db-verify-consent-ordering.sh; docker rm -f h2a-db-verify 2>/dev/null || true",
+    "test:live": "doppler run --project h2a --config dev -- bash scripts/test-live.sh"
   }
 }
