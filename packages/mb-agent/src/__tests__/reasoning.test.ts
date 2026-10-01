@@ -42,7 +42,12 @@ vi.mock('../langfuse.js', () => ({
   trackMissingPin: vi.fn(),
   trackPersistTurnFailed: (...args: unknown[]) => mockTrackPersistFailed(...args),
   trackPromptCacheRejected: vi.fn().mockResolvedValue(undefined),
+  trackRoutingDecision: vi.fn().mockResolvedValue(undefined),
   getLangfuseConfig: vi.fn().mockReturnValue(null),
+}))
+
+vi.mock('../turn-classifier.js', () => ({
+  resolveRoutingPurpose: vi.fn().mockResolvedValue({ complexity: 'complex', purpose: 'main', reason: 'default-complex' }),
 }))
 
 vi.mock('../memory-extraction.js', () => ({
