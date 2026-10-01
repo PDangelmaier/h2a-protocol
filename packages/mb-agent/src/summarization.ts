@@ -131,12 +131,12 @@ export async function loadLatestSummary(
   return data ? mapSummaryRow(data) : null
 }
 
-export function enforceHardLimit(
+export function enforceHardLimit<T extends { role: string; content: string }>(
   systemPrompt: string,
-  conversationHistory: Array<{ role: string; content: string }>,
+  conversationHistory: T[],
   toolTokens: number,
   config?: SummarizationConfig,
-): Array<{ role: string; content: string }> {
+): T[] {
   const cfg = config ?? DEFAULT_CONFIG
   const systemTokens = estimateTokens(systemPrompt)
   const fixedTokens = systemTokens + toolTokens
@@ -146,7 +146,7 @@ export function enforceHardLimit(
   }
 
   let budget = cfg.hardLimitTokens - fixedTokens
-  const result: Array<{ role: string; content: string }> = []
+  const result: T[] = []
 
   for (let i = conversationHistory.length - 1; i >= 0; i--) {
     const tokens = estimateTokens(conversationHistory[i].content)
@@ -158,15 +158,15 @@ export function enforceHardLimit(
   return result
 }
 
-export function buildHistoryWithSummary(
+export function buildHistoryWithSummary<T extends { role: string; content: string }>(
   summary: ConversationSummary | null,
-  recentTurns: Array<{ role: string; content: string }>,
-): Array<{ role: string; content: string }> {
+  recentTurns: T[],
+): T[] {
   if (!summary) return recentTurns
 
   return [
-    { role: 'user', content: `[Previous conversation summary: ${summary.summary}]` },
-    { role: 'assistant', content: 'Understood, I have the context from our previous conversation.' },
+    { role: 'user', content: `[Previous conversation summary: ${summary.summary}]` } as T,
+    { role: 'assistant', content: 'Understood, I have the context from our previous conversation.' } as T,
     ...recentTurns,
   ]
 }

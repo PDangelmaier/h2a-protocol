@@ -97,7 +97,7 @@ export async function reasoningLoop(
   const toolTokenEstimate = tools.length > 0 ? estimateSessionTokens('', [], tools.length * 200) : 0
   const hardLimitHistory = enforceHardLimit(
     systemPromptWithCanary,
-    historyWithSummary.map(m => ({ role: m.role, content: m.content })),
+    historyWithSummary,
     toolTokenEstimate,
   )
   const sessionForRequest = { ...sessionWithSummary, conversationHistory: hardLimitHistory }
