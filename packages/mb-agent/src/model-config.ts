@@ -15,6 +15,7 @@ export interface ModelConfigRow {
   cost_per_input_1k: number | null
   cost_per_output_1k: number | null
   cost_per_cached_input_1k: number | null
+  fallback_priority: number
   created_at: string
 }
 
@@ -55,11 +56,51 @@ export async function resolveModel(
   return data.model_id
 }
 
+export interface FallbackChainEntry {
+  modelId: string
+  priority: number
+}
+
+const chainCache = new Map<ModelPurpose, { entries: FallbackChainEntry[]; expiresAt: number }>()
+
+export async function resolveFallbackChain(
+  purpose: ModelPurpose,
+  supabase: SupabaseClient,
+): Promise<FallbackChainEntry[]> {
+  const cached = chainCache.get(purpose)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.entries
+  }
+
+  const { data, error } = await supabase
+    .from('model_config')
+    .select('model_id, fallback_priority')
+    .eq('purpose', purpose)
+    .eq('is_active', true)
+    .order('fallback_priority', { ascending: true })
+    .limit(3)
+
+  if (error || !data || data.length === 0) {
+    await trackMissingPin(purpose)
+    throw new Error(`No active model for purpose "${purpose}" — check migration 020`)
+  }
+
+  const entries = (data as Array<{ model_id: string; fallback_priority: number }>).map(r => ({
+    modelId: r.model_id,
+    priority: r.fallback_priority,
+  }))
+
+  chainCache.set(purpose, { entries, expiresAt: Date.now() + CACHE_TTL_MS })
+  return entries
+}
+
 export function invalidateModelCache(purpose?: ModelPurpose): void {
   if (purpose) {
     cache.delete(purpose)
+    chainCache.delete(purpose)
   } else {
     cache.clear()
+    chainCache.clear()
   }
 }
 

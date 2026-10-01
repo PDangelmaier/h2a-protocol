@@ -24,6 +24,7 @@ vi.mock('../memory.js', () => ({
 
 vi.mock('../model-config.js', () => ({
   resolveModel: vi.fn().mockResolvedValue('claude-sonnet-4-6'),
+  resolveFallbackChain: vi.fn().mockResolvedValue([{ modelId: 'claude-sonnet-4-6', priority: 1 }]),
   resolveModelPricing: vi.fn().mockResolvedValue({
     purpose: 'main', modelId: 'claude-sonnet-4-6',
     costPerInput1k: 0.0039, costPerOutput1k: 0.0195, costPerCachedInput1k: 0.00039,
@@ -40,6 +41,13 @@ vi.mock('../langfuse.js', () => ({
 const mockNexusSync = vi.fn()
 vi.mock('../nexus.js', () => ({
   callNexusSync: (...args: unknown[]) => mockNexusSync(...args),
+}))
+
+vi.mock('../fallback.js', () => ({
+  callWithFallback: vi.fn().mockImplementation(async (request: unknown) => {
+    const result = await mockNexusSync(request)
+    return { ...result, actualModelId: 'claude-sonnet-4-6', fallbacksUsed: 0 }
+  }),
 }))
 
 const mockExecuteTool = vi.fn()

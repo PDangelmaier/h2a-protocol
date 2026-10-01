@@ -4,9 +4,11 @@ import { buildSystemPrompt, resolvePersonality } from './ccp.js'
 import { computeIntentScore, scoreToProactivity } from './isp.js'
 import { loadAgentMemories, persistMemory } from './memory.js'
 import { trackPersistTurnFailed } from './langfuse.js'
-import { resolveModel } from './model-config.js'
+import { resolveModel, resolveFallbackChain } from './model-config.js'
+import type { FallbackChainEntry } from './model-config.js'
 import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
+import { callWithFallback } from './fallback.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
 import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
@@ -88,7 +90,8 @@ export async function reasoningLoop(
     }
   }
 
-  const response = await processResponse(nexusRequest, config.nexus, session.id, session.profileId, session.locale, supabase)
+  const fallbackChain = await resolveFallbackChain('main', supabase)
+  const response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase)
 
   const outputCheck = validateOutput(response.text, session.id, session.locale)
   if (!outputCheck.safe) {
@@ -227,6 +230,7 @@ const MAX_TOOL_ROUNDS = 5
 async function processResponse(
   request: NexusRequest,
   nexusConfig: NexusConfig,
+  fallbackChain: FallbackChainEntry[],
   sessionId: string,
   profileId: string,
   locale: string,
@@ -245,11 +249,11 @@ async function processResponse(
     )
     await checkTokenBudget(sessionId, estimate)
 
-    const result = await callNexusSync(currentRequest, nexusConfig)
-    await trackNexusCost(sessionId, 'main', result, supabase)
+    const fbResult = await callWithFallback(currentRequest, fallbackChain, nexusConfig, 'main')
+    await trackNexusCost(sessionId, 'main', fbResult, supabase)
 
-    if (result.stopReason !== 'tool_use' || result.toolCalls.length === 0) {
-      return { text: result.text, toolsUsed, newMemories }
+    if (fbResult.stopReason !== 'tool_use' || fbResult.toolCalls.length === 0) {
+      return { text: fbResult.text, toolsUsed, newMemories }
     }
 
     const limitCheck = await checkCostLimit(sessionId, supabase, locale)
@@ -258,7 +262,7 @@ async function processResponse(
     }
 
     const toolResults = await Promise.all(
-      result.toolCalls.map(async (call) => {
+      fbResult.toolCalls.map(async (call) => {
         toolsUsed.push(call.name)
         const toolResult = await executeToolWithConsent(
           { toolId: call.id, input: call.input },
@@ -278,7 +282,7 @@ async function processResponse(
       ...currentRequest,
       messages: [
         ...currentRequest.messages,
-        { role: 'assistant', content: result.toolCalls.map(tc => ({ toolUse: { toolUseId: tc.id, name: tc.name, input: tc.input } })) as never },
+        { role: 'assistant', content: fbResult.toolCalls.map(tc => ({ toolUse: { toolUseId: tc.id, name: tc.name, input: tc.input } })) as never },
         { role: 'user', content: toolResults.map(tr => ({ toolResult: tr })) as never },
       ],
     }
@@ -291,9 +295,9 @@ async function processResponse(
   )
   await checkTokenBudget(sessionId, finalEstimate)
 
-  const finalResult = await callNexusSync(currentRequest, nexusConfig)
-  await trackNexusCost(sessionId, 'main', finalResult, supabase)
-  return { text: finalResult.text, toolsUsed, newMemories }
+  const finalFbResult = await callWithFallback(currentRequest, fallbackChain, nexusConfig, 'main')
+  await trackNexusCost(sessionId, 'main', finalFbResult, supabase)
+  return { text: finalFbResult.text, toolsUsed, newMemories }
 }
 
 async function persistTurn(
