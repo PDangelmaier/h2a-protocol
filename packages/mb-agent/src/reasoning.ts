@@ -19,6 +19,7 @@ import { injectCanary, validateOutput } from './output-validator.js'
 import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
 import { loadToolStatusMessages, buildStatusEvent } from './tool-status.js'
 import type { OnStatusEvent } from './tool-status.js'
+import { extractMemories } from './memory-extraction.js'
 
 interface SessionState {
   id: string
@@ -136,6 +137,15 @@ export async function reasoningLoop(
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[persistTurn] session=${session.id} turn=${turnId}: ${msg}`)
     trackPersistTurnFailed(session.id, turnId, msg).catch(() => {})
+  })
+
+  extractMemories(
+    session.profileId, session.id,
+    { user: signal.content, assistant: response.text },
+    null, config.nexus, supabase,
+  ).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[extractMemories] session=${session.id}: ${msg}`)
   })
 
   return {
