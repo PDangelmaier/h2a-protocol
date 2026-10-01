@@ -483,8 +483,8 @@ async function handleAdminExperiments(req: Request, path: string): Promise<Respo
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
   if (path === '/admin/experiments' && req.method === 'GET') {
-    const experiments = await loadActiveExperiments(supabase)
     invalidateExperimentCache()
+    const experiments = await loadActiveExperiments(supabase)
     return jsonResponse(experiments)
   }
 
