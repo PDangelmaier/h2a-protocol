@@ -84,7 +84,12 @@ Keine.
 
 ## CI Evidence
 
-Ausstehend — PR wird erstellt.
+```
+$ gh pr checks 34
+tests      pass  26s  https://github.com/PDangelmaier/h2a-protocol/actions/runs/36858596423
+db-verify  pass  4s   https://github.com/PDangelmaier/h2a-protocol/actions/runs/36858596445
+merge-gate fail  3s   (erwartet — Label fehlt noch)
+```
 
 ## Offene Punkte
 
