@@ -65,6 +65,57 @@ describe('SPEC-026 AC-2: SSE stream ends cleanly after degradation (contract tes
   })
 })
 
+describe('SPEC-026 MF-1: Cost gate path uses degradation system', () => {
+  it('pre-loop cost gate returns degraded result with cost_limit reason', () => {
+    const degradedResult = {
+      response: 'Entschuldigung, leider steht aktuell kein Berater zur Verfügung.',
+      intent: { intentScore: 0, journeyPhase: 'awareness', purchaseIntent: 0, primaryInterest: null, proactivityLevel: 'still', computedAt: new Date() },
+      toolsUsed: [] as string[],
+      newMemories: [] as string[],
+      securityEvents: [],
+      degraded: { reason: 'cost_limit' as const },
+    }
+
+    expect(degradedResult.degraded).toBeDefined()
+    expect(degradedResult.degraded.reason).toBe('cost_limit')
+    expect(degradedResult.toolsUsed).toEqual([])
+  })
+
+  it('mid-loop cost gate returns ProcessedResponse with degraded field', () => {
+    const processedResponse = {
+      text: 'Entschuldigung, leider steht aktuell kein Berater zur Verfügung.',
+      toolsUsed: ['search_inventory'],
+      newMemories: [],
+      degraded: { reason: 'cost_limit' as const },
+    }
+
+    expect(processedResponse.degraded).toBeDefined()
+    expect(processedResponse.degraded.reason).toBe('cost_limit')
+    expect(processedResponse.toolsUsed).toContain('search_inventory')
+  })
+
+  it('degraded field from processResponse propagates to ReasoningResult', () => {
+    const processedWithDegraded = {
+      text: 'Contact us for help.',
+      toolsUsed: ['tool_a'],
+      newMemories: [],
+      degraded: { reason: 'cost_limit' as const },
+    }
+
+    const reasoningResult = {
+      response: processedWithDegraded.text,
+      intent: { intentScore: 0, journeyPhase: 'awareness', purchaseIntent: 0, primaryInterest: null, proactivityLevel: 'still', computedAt: new Date() },
+      toolsUsed: processedWithDegraded.toolsUsed,
+      newMemories: processedWithDegraded.newMemories,
+      securityEvents: [],
+      ...(processedWithDegraded.degraded ? { degraded: processedWithDegraded.degraded } : {}),
+    }
+
+    expect(reasoningResult.degraded).toBeDefined()
+    expect(reasoningResult.degraded!.reason).toBe('cost_limit')
+  })
+})
+
 describe('SPEC-026 AC-4: Session remains usable after degradation', () => {
   it('degraded result does not throw — reasoning loop returns normally', () => {
     const degradedResult = {

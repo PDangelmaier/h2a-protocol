@@ -84,12 +84,14 @@ export async function reasoningLoop(
 
   const costCheck = await checkCostLimit(session.id, supabase, session.locale)
   if (costCheck.exceeded) {
+    const degraded = await buildDegradedResponse('cost_limit', session.locale, supabase)
     return {
-      response: costCheck.shutdownMessage!,
+      response: formatDegradedForCustomer(degraded),
       intent,
       toolsUsed: [],
       newMemories: [],
       securityEvents: [],
+      degraded: { reason: 'cost_limit' },
     }
   }
 
@@ -139,6 +141,7 @@ export async function reasoningLoop(
     toolsUsed: response.toolsUsed,
     newMemories: response.newMemories,
     securityEvents: [],
+    ...(response.degraded ? { degraded: response.degraded } : {}),
   }
 }
 
@@ -245,6 +248,7 @@ interface ProcessedResponse {
   text: string
   toolsUsed: string[]
   newMemories: string[]
+  degraded?: { reason: DegradationReason }
 }
 
 const MAX_TOOL_ROUNDS = 5
@@ -280,7 +284,8 @@ async function processResponse(
 
     const limitCheck = await checkCostLimit(sessionId, supabase, locale)
     if (limitCheck.exceeded) {
-      return { text: limitCheck.shutdownMessage!, toolsUsed, newMemories }
+      const degraded = await buildDegradedResponse('cost_limit', locale, supabase)
+      return { text: formatDegradedForCustomer(degraded), toolsUsed, newMemories, degraded: { reason: 'cost_limit' } }
     }
 
     const toolResults = await Promise.all(
