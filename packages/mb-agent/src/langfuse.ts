@@ -19,6 +19,10 @@ export function initLangfuse(cfg: LangfuseConfig): void {
   config = cfg
 }
 
+export function getLangfuseConfig(): LangfuseConfig | null {
+  return config
+}
+
 export async function trackModelSwitch(event: ModelSwitchEvent): Promise<void> {
   if (!config) return
 

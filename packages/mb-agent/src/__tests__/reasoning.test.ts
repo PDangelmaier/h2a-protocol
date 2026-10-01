@@ -36,6 +36,22 @@ vi.mock('../langfuse.js', () => ({
   trackModelSwitch: vi.fn(),
   trackMissingPin: vi.fn(),
   trackPersistTurnFailed: (...args: unknown[]) => mockTrackPersistFailed(...args),
+  getLangfuseConfig: vi.fn().mockReturnValue(null),
+}))
+
+vi.mock('../memory-extraction.js', () => ({
+  extractMemories: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('../loop-telemetry.js', () => ({
+  createLoopState: vi.fn().mockReturnValue({ traces: [], signatureCounts: new Map() }),
+  recordToolRound: vi.fn().mockReturnValue({ round: 1, toolNames: [], durationMs: 0, estimatedTokens: 0, truncatedResultSize: 0, signatureHashes: [] }),
+  checkSoftLoop: vi.fn().mockReturnValue({ detected: false, repeatedHash: null, repeatCount: 0 }),
+  buildSoftLoopHint: vi.fn().mockReturnValue('[System] Loop detected'),
+  emitTraceEvent: vi.fn().mockResolvedValue(undefined),
+  emitSoftLoopEvent: vi.fn().mockResolvedValue(undefined),
+  createLangfuseEmitter: vi.fn().mockReturnValue(null),
+  createStructuredLogEmitter: vi.fn().mockReturnValue(vi.fn().mockResolvedValue(undefined)),
 }))
 
 const mockNexusSync = vi.fn()
@@ -43,12 +59,16 @@ vi.mock('../nexus.js', () => ({
   callNexusSync: (...args: unknown[]) => mockNexusSync(...args),
 }))
 
-vi.mock('../fallback.js', () => ({
-  callWithFallback: vi.fn().mockImplementation(async (request: unknown) => {
-    const result = await mockNexusSync(request)
-    return { ...result, actualModelId: 'claude-sonnet-4-6', fallbacksUsed: 0 }
-  }),
-}))
+vi.mock('../fallback.js', async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>
+  return {
+    ...actual,
+    callWithFallback: vi.fn().mockImplementation(async (request: unknown) => {
+      const result = await mockNexusSync(request)
+      return { ...result, actualModelId: 'claude-sonnet-4-6', fallbacksUsed: 0 }
+    }),
+  }
+})
 
 const mockExecuteTool = vi.fn()
 vi.mock('../tools.js', () => ({

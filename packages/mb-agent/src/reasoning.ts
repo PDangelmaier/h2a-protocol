@@ -3,7 +3,7 @@ import type { AgentConfig, CustomerContext, IntentSnapshot, NexusConfig } from '
 import { buildSystemPrompt, resolvePersonality } from './ccp.js'
 import { computeIntentScore, scoreToProactivity } from './isp.js'
 import { loadAgentMemories, persistMemory } from './memory.js'
-import { trackPersistTurnFailed } from './langfuse.js'
+import { trackPersistTurnFailed, getLangfuseConfig } from './langfuse.js'
 import { resolveModel, resolveFallbackChain } from './model-config.js'
 import type { FallbackChainEntry } from './model-config.js'
 import { callNexusSync } from './nexus.js'
@@ -20,6 +20,8 @@ import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget }
 import { loadToolStatusMessages, buildStatusEvent } from './tool-status.js'
 import type { OnStatusEvent } from './tool-status.js'
 import { extractMemories } from './memory-extraction.js'
+import { createLoopState, recordToolRound, checkSoftLoop, buildSoftLoopHint, emitTraceEvent, emitSoftLoopEvent, createLangfuseEmitter, createStructuredLogEmitter } from './loop-telemetry.js'
+import type { TraceEmitter } from './loop-telemetry.js'
 
 interface SessionState {
   id: string
@@ -282,6 +284,12 @@ async function processResponse(
   const grantedConsents = await loadGrantedConsents(profileId, supabase)
   const statusMessages = onStatusEvent ? await loadToolStatusMessages(supabase) : null
 
+  const loopState = createLoopState()
+  const langfuseCfg = getLangfuseConfig()
+  const traceEmitter: TraceEmitter | null = langfuseCfg
+    ? createLangfuseEmitter(langfuseCfg)
+    : createStructuredLogEmitter()
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const estimate = estimateInputTokens(
       currentRequest.system[0]?.text ?? '',
@@ -308,6 +316,8 @@ async function processResponse(
       onStatusEvent(buildStatusEvent(toolNames, round + 1, statusMessages))
     }
 
+    const roundStart = Date.now()
+
     const toolResults = await Promise.all(
       fbResult.toolCalls.map(async (call) => {
         toolsUsed.push(call.name)
@@ -321,16 +331,50 @@ async function processResponse(
         const maxTokens = getToolMaxTokens(call.name)
         const truncated = truncateToolResult(toolResult.data, { maxTokens })
         const delimited = { _h2a_tool_data: true, tool: call.name, data: truncated }
-        return { toolUseId: call.id, content: [{ json: delimited }] }
+        return { toolUseId: call.id, content: [{ json: delimited }], truncatedSize: JSON.stringify(truncated).length }
       }),
     )
+
+    const roundDurationMs = Date.now() - roundStart
+    const totalTruncatedSize = toolResults.reduce((sum, r) => sum + (r.truncatedSize ?? 0), 0)
+
+    const trace = recordToolRound(
+      loopState, round + 1,
+      fbResult.toolCalls.map(tc => ({ name: tc.name, input: tc.input })),
+      roundDurationMs, estimate.total, totalTruncatedSize,
+    )
+    emitTraceEvent(trace, sessionId, traceEmitter).catch(() => {})
+
+    const softLoop = checkSoftLoop(loopState)
+    if (softLoop.detected) {
+      await emitSoftLoopEvent(softLoop, sessionId, traceEmitter).catch(() => {})
+      const hint = buildSoftLoopHint(softLoop, locale)
+      currentRequest = {
+        ...currentRequest,
+        messages: [
+          ...currentRequest.messages,
+          { role: 'assistant', content: fbResult.toolCalls.map(tc => ({ toolUse: { toolUseId: tc.id, name: tc.name, input: tc.input } })) as never },
+          { role: 'user', content: toolResults.map(tr => ({ toolResult: { toolUseId: tr.toolUseId, content: tr.content } })) as never },
+          { role: 'user', content: [{ text: hint }] } as never,
+        ],
+      }
+      const abortEstimate = estimateInputTokens(
+        currentRequest.system[0]?.text ?? '',
+        currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
+        currentRequest.toolConfig,
+      )
+      await checkTokenBudget(sessionId, abortEstimate)
+      const abortResult = await callWithFallback(currentRequest, fallbackChain, nexusConfig, 'main')
+      await trackNexusCost(sessionId, 'main', abortResult, supabase)
+      return { text: abortResult.text, toolsUsed, newMemories }
+    }
 
     currentRequest = {
       ...currentRequest,
       messages: [
         ...currentRequest.messages,
         { role: 'assistant', content: fbResult.toolCalls.map(tc => ({ toolUse: { toolUseId: tc.id, name: tc.name, input: tc.input } })) as never },
-        { role: 'user', content: toolResults.map(tr => ({ toolResult: tr })) as never },
+        { role: 'user', content: toolResults.map(tr => ({ toolResult: { toolUseId: tr.toolUseId, content: tr.content } })) as never },
       ],
     }
   }
