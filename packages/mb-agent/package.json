@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:golden:live": "GOLDEN_MODE=live vitest run src/__tests__/golden-runner.test.ts",
     "dev": "tsx watch src/server.ts"
   },
   "dependencies": {
