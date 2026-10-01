@@ -15,6 +15,16 @@ vi.mock('../cost-gate.js', () => ({
   checkTokenBudget: vi.fn().mockResolvedValue(true),
 }))
 
+vi.mock('../summarization.js', () => ({
+  needsSummarization: vi.fn().mockReturnValue(false),
+  summarizeOlderTurns: vi.fn().mockResolvedValue(null),
+  loadLatestSummary: vi.fn().mockResolvedValue(null),
+  enforceHardLimit: vi.fn().mockImplementation((_sys: string, history: unknown[]) => history),
+  buildHistoryWithSummary: vi.fn().mockImplementation((_summary: unknown, turns: unknown[]) => turns),
+  estimateSessionTokens: vi.fn().mockReturnValue(1000),
+  getSummarizationConfig: vi.fn().mockReturnValue({ softLimitTokens: 8000, hardLimitTokens: 12000, keepRecentTurns: 6 }),
+}))
+
 import { reasoningLoop } from '../reasoning.js'
 import type { AgentConfig } from '../types.js'
 
