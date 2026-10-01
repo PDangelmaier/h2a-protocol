@@ -38,3 +38,5 @@ export { extractMemories, archiveMemory, trackMemoryAccess, validateExtractionOu
 export { createLoopState, recordToolRound, checkSoftLoop, buildSoftLoopHint, hashToolSignature, emitTraceEvent, emitSoftLoopEvent, createLangfuseEmitter, createStructuredLogEmitter } from './loop-telemetry.js'
 export type { ToolRoundTrace, SoftLoopDetection, LoopTelemetryState, TraceEmitter } from './loop-telemetry.js'
 export { getLangfuseConfig } from './langfuse.js'
+export { trackTtft, getSlaThreshold } from './ttft-tracking.js'
+export type { TtftMetrics, TtftTrackResult } from './ttft-tracking.js'
