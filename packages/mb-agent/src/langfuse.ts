@@ -260,6 +260,38 @@ export async function trackToolError(toolName: string, errorType: string, durati
   }
 }
 
+export async function trackDegradedResponse(reason: string): Promise<void> {
+  if (!config) return
+
+  const body = {
+    batch: [{
+      id: crypto.randomUUID(),
+      type: 'event-create',
+      timestamp: new Date().toISOString(),
+      body: {
+        name: 'degraded_response',
+        level: 'WARNING',
+        metadata: { reason },
+      },
+    }],
+  }
+
+  const auth = btoa(`${config.publicKey}:${config.secretKey}`)
+
+  try {
+    await fetch(`${config.baseUrl}/api/public/ingestion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    // fire-and-forget
+  }
+}
+
 export async function trackMissingPin(purpose: string): Promise<void> {
   if (!config) return
 
