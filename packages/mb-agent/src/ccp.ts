@@ -7,15 +7,22 @@ import type { PromptVersion } from './prompt-versioning.js'
 import { buildFewShotBlock } from './few-shot-guardrails.js'
 import { buildStateTrackingLayer } from './state-tracking.js'
 import type { ConversationState } from './state-tracking.js'
+import { resolveExperimentPromptVersion } from './ab-testing.js'
+import type { ExperimentAssignment } from './ab-testing.js'
 
 export interface ResolvedPersonalityWithVersion extends CCPPersonality {
   promptVersion: number | null
 }
 
+export interface ResolvedPersonalityResult extends ResolvedPersonalityWithVersion {
+  experimentAssignment?: ExperimentAssignment | null
+}
+
 export async function resolvePersonality(
   context: CustomerContext,
   supabase: SupabaseClient,
-): Promise<ResolvedPersonalityWithVersion> {
+  subjectId?: string,
+): Promise<ResolvedPersonalityResult> {
   const { data } = await supabase
     .from('ccp_routing_rules')
     .select('personality_id, priority')
@@ -34,9 +41,27 @@ export async function resolvePersonality(
     .eq('id', personalityId)
     .single()
 
-  if (!personality) return { ...defaultPersonality(), promptVersion: null }
+  if (!personality) return { ...defaultPersonality(), promptVersion: null, experimentAssignment: null }
 
-  const activePrompt = await resolveActivePrompt(personality.id, supabase)
+  let experimentAssignment: ExperimentAssignment | null = null
+  if (subjectId) {
+    experimentAssignment = await resolveExperimentPromptVersion(personalityId, subjectId, supabase)
+  }
+
+  let activePrompt: PromptVersion | null = null
+  if (experimentAssignment) {
+    const { data: expPrompt } = await supabase
+      .from('ccp_prompt_versions')
+      .select('*')
+      .eq('id', experimentAssignment.promptVersionId)
+      .single()
+    if (expPrompt) activePrompt = mapPromptRow(expPrompt)
+  }
+
+  if (!activePrompt) {
+    activePrompt = await resolveActivePrompt(personality.id, supabase)
+  }
+
   const staticPrompt = activePrompt?.staticPrompt ?? personality.system_prompt
 
   return {
@@ -46,6 +71,20 @@ export async function resolvePersonality(
     systemPrompt: staticPrompt,
     temperature: personality.temperature,
     promptVersion: activePrompt?.version ?? null,
+    experimentAssignment,
+  }
+}
+
+function mapPromptRow(row: Record<string, unknown>): PromptVersion {
+  return {
+    id: row.id as string,
+    personalityId: row.personality_id as string,
+    version: row.version as number,
+    staticPrompt: row.static_prompt as string,
+    isActive: row.is_active as boolean,
+    activatedAt: (row.activated_at as string) ?? null,
+    activatedBy: (row.activated_by as string) ?? null,
+    createdAt: row.created_at as string,
   }
 }
 

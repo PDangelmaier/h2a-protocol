@@ -8,6 +8,7 @@ vi.mock('../ccp.js', () => ({
   resolvePersonality: vi.fn().mockResolvedValue({
     id: 'p1', slug: 'default', displayName: 'MB Assistent',
     systemPrompt: 'Du bist der MB Assistent.', temperature: 0.3,
+    experimentAssignment: null,
   }),
   buildSystemPrompt: vi.fn().mockReturnValue('System prompt built'),
   buildSystemPromptSplit: vi.fn().mockReturnValue({
