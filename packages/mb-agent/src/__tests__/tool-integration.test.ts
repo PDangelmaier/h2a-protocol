@@ -10,6 +10,21 @@ vi.mock('../langfuse.js', () => ({
   trackToolError: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('../step-up-auth.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../step-up-auth.js')>()
+  return {
+    ...orig,
+    loadSessionAuthState: vi.fn().mockResolvedValue({
+      authTier: 'identified',
+      lastAuthAt: new Date().toISOString(),
+      deviceFingerprint: 'fp-test',
+    }),
+    logStepUpEvent: vi.fn().mockResolvedValue(undefined),
+  }
+})
+
+import { loadSessionAuthState, logStepUpEvent } from '../step-up-auth.js'
+
 function buildMockSupabase(tool: Record<string, unknown> | null) {
   return {
     from: vi.fn().mockReturnValue({
@@ -128,5 +143,108 @@ describe('SPEC-018: getAvailableTools maps timeout and risk_level', () => {
     const tools = await getAvailableTools(context, supabase)
     expect(tools[0].timeoutSeconds).toBe(10)
     expect(tools[0].riskLevel).toBe('high')
+  })
+})
+
+describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
+  const highRiskTool = { ...baseTool, risk_level: 'high' }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('blocks high-risk tool when auth tier is insufficient', async () => {
+    vi.mocked(loadSessionAuthState).mockResolvedValue({
+      authTier: 'anonymous',
+      lastAuthAt: new Date().toISOString(),
+      deviceFingerprint: 'fp-test',
+    })
+
+    const supabase = buildMockSupabase(highRiskTool)
+    const result = await executeToolWithConsent(
+      { toolId: 'tool-1', input: {} },
+      'prof-1', [], supabase, 'de',
+      { sessionId: 'sess-1' },
+    )
+    expect(result.error).toBe(true)
+    expect(result.data.errorType).toBe('step_up_required')
+    expect(result.data.reason).toBe('tier_insufficient')
+  })
+
+  it('allows high-risk tool when auth is fresh and tier is identified', async () => {
+    vi.mocked(loadSessionAuthState).mockResolvedValue({
+      authTier: 'identified',
+      lastAuthAt: new Date().toISOString(),
+      deviceFingerprint: 'fp-test',
+    })
+
+    const supabase = buildMockSupabase(highRiskTool)
+    const result = await executeToolWithConsent(
+      { toolId: 'tool-1', input: {} },
+      'prof-1', [], supabase, 'de',
+      { sessionId: 'sess-1', deviceFingerprint: 'fp-test' },
+    )
+    expect(result.error).toBe(false)
+    expect(result.data.status).toBe('dispatched')
+  })
+
+  it('blocks high-risk tool when device fingerprint changes', async () => {
+    vi.mocked(loadSessionAuthState).mockResolvedValue({
+      authTier: 'identified',
+      lastAuthAt: new Date().toISOString(),
+      deviceFingerprint: 'fp-original',
+    })
+
+    const supabase = buildMockSupabase(highRiskTool)
+    const result = await executeToolWithConsent(
+      { toolId: 'tool-1', input: {} },
+      'prof-1', [], supabase, 'de',
+      { sessionId: 'sess-1', deviceFingerprint: 'fp-different' },
+    )
+    expect(result.error).toBe(true)
+    expect(result.data.errorType).toBe('step_up_required')
+    expect(result.data.reason).toBe('device_changed')
+  })
+
+  it('normal risk tool passes without step-up context', async () => {
+    const supabase = buildMockSupabase(baseTool)
+    const result = await executeToolWithConsent(
+      { toolId: 'tool-1', input: {} },
+      'prof-1', [], supabase, 'de',
+    )
+    expect(result.error).toBe(false)
+    expect(result.data.status).toBe('dispatched')
+    expect(loadSessionAuthState).not.toHaveBeenCalled()
+  })
+
+  it('consent check runs before step-up check', async () => {
+    const toolWithConsent = { ...highRiskTool, requires_consent: ['vehicle_control'] }
+    const supabase = buildMockSupabase(toolWithConsent)
+    const result = await executeToolWithConsent(
+      { toolId: 'tool-1', input: {} },
+      'prof-1', [], supabase, 'de',
+      { sessionId: 'sess-1' },
+    )
+    expect(result.error).toBe(true)
+    expect(result.data.errorType).toBe('consent_missing')
+    expect(loadSessionAuthState).not.toHaveBeenCalled()
+  })
+
+  it('logs step_up_required event on block', async () => {
+    vi.mocked(loadSessionAuthState).mockResolvedValue({
+      authTier: 'anonymous',
+      lastAuthAt: null,
+      deviceFingerprint: null,
+    })
+
+    const supabase = buildMockSupabase(highRiskTool)
+    await executeToolWithConsent(
+      { toolId: 'tool-1', input: {} },
+      'prof-1', [], supabase, 'de',
+      { sessionId: 'sess-1' },
+    )
+    expect(logStepUpEvent).toHaveBeenCalledWith(
+      'step_up_required', 'sess-1', 'vehicle_catalog', 'tier_insufficient', supabase,
+    )
   })
 })

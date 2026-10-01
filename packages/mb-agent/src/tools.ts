@@ -3,6 +3,8 @@ import type { CustomerContext, ToolResult } from './types.js'
 import { buildConsentHint, logConsentDenial } from './consent.js'
 import { buildToolError, classifyToolError, sanitizeErrorForModel } from './tool-errors.js'
 import { trackToolError } from './langfuse.js'
+import { checkStepUp, loadSessionAuthState, logStepUpEvent } from './step-up-auth.js'
+import type { SessionAuthState } from './step-up-auth.js'
 
 const DEFAULT_TIMEOUT_MS = 5_000
 
@@ -61,12 +63,18 @@ function mapToolRow(row: Record<string, unknown>): ToolDefinition {
   }
 }
 
+export interface StepUpContext {
+  sessionId: string
+  deviceFingerprint?: string | null
+}
+
 export async function executeToolWithConsent(
   toolUse: ToolUse,
   profileId: string,
   grantedConsents: string[],
   supabase: SupabaseClient,
   locale: string = 'de',
+  stepUpContext?: StepUpContext,
 ): Promise<ToolResult> {
   const startMs = Date.now()
 
@@ -104,6 +112,20 @@ export async function executeToolWithConsent(
     result.data.requiredConsents = required
     trackToolError(toolName, 'consent_missing', Date.now() - startMs).catch(() => {})
     return result
+  }
+
+  const riskLevel = (tool.risk_level as string) ?? 'normal'
+  if (stepUpContext && (riskLevel === 'high' || riskLevel === 'critical')) {
+    const authState = await loadSessionAuthState(stepUpContext.sessionId, supabase)
+    const stepUpResult = checkStepUp(riskLevel, authState, stepUpContext.deviceFingerprint ?? null)
+    if (!stepUpResult.allowed) {
+      logStepUpEvent('step_up_required', stepUpContext.sessionId, toolName, stepUpResult.reason!, supabase).catch(() => {})
+      const result = buildToolError('step_up_required', toolName, Date.now() - startMs, locale)
+      result.data.reason = stepUpResult.reason
+      result.data.requiredTier = stepUpResult.requiredTier
+      trackToolError(toolName, 'step_up_required', Date.now() - startMs).catch(() => {})
+      return result
+    }
   }
 
   try {

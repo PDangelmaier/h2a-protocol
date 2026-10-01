@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://h2a-protocol.dev/schema/step-up-required-event.json",
+  "title": "H2A Step-Up Required Event",
+  "description": "SSE event sent when a high-risk tool requires re-authentication (SPEC-014)",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "step_up_required"
+    },
+    "toolName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of the tool that requires step-up authentication"
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["auth_expired", "tier_insufficient", "device_changed"],
+      "description": "Why step-up authentication is required"
+    },
+    "requiredTier": {
+      "type": "string",
+      "enum": ["identified", "premium"],
+      "description": "Minimum identity tier required for the tool"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds when the event was emitted"
+    }
+  },
+  "required": ["type", "toolName", "reason", "requiredTier", "ts"],
+  "additionalProperties": false
+}
