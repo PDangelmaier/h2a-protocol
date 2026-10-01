@@ -17,6 +17,8 @@ import { buildDegradedResponse, formatDegradedForCustomer } from './degradation.
 import type { DegradationReason } from './degradation.js'
 import { injectCanary, validateOutput } from './output-validator.js'
 import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
+import { loadToolStatusMessages, buildStatusEvent } from './tool-status.js'
+import type { OnStatusEvent } from './tool-status.js'
 
 interface SessionState {
   id: string
@@ -59,6 +61,7 @@ export async function reasoningLoop(
   session: SessionState,
   signal: UserSignal,
   config: AgentConfig,
+  onStatusEvent?: OnStatusEvent,
 ): Promise<ReasoningResult> {
   const { createClient } = await import('@supabase/supabase-js')
   const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey)
@@ -99,7 +102,7 @@ export async function reasoningLoop(
 
   let response: ProcessedResponse
   try {
-    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase)
+    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase, onStatusEvent)
   } catch (err) {
     const reason: DegradationReason =
       err instanceof FallbackChainExhaustedError || err instanceof FallbackTimeoutError
@@ -261,11 +264,13 @@ async function processResponse(
   profileId: string,
   locale: string,
   supabase: SupabaseClient,
+  onStatusEvent?: OnStatusEvent,
 ): Promise<ProcessedResponse> {
   const toolsUsed: string[] = []
   const newMemories: string[] = []
   let currentRequest = request
   const grantedConsents = await loadGrantedConsents(profileId, supabase)
+  const statusMessages = onStatusEvent ? await loadToolStatusMessages(supabase) : null
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const estimate = estimateInputTokens(
@@ -286,6 +291,11 @@ async function processResponse(
     if (limitCheck.exceeded) {
       const degraded = await buildDegradedResponse('cost_limit', locale, supabase)
       return { text: formatDegradedForCustomer(degraded), toolsUsed, newMemories, degraded: { reason: 'cost_limit' } }
+    }
+
+    if (onStatusEvent && statusMessages) {
+      const toolNames = fbResult.toolCalls.map(tc => tc.name)
+      onStatusEvent(buildStatusEvent(toolNames, round + 1, statusMessages))
     }
 
     const toolResults = await Promise.all(
