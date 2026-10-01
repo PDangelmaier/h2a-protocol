@@ -55,7 +55,7 @@ jobs:
               CREATE ROLE anon NOLOGIN;
             END IF;
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
-              CREATE ROLE service_role NOLOGIN;
+              CREATE ROLE service_role NOLOGIN BYPASSRLS;
             END IF;
           END $$;
 
@@ -301,9 +301,9 @@ jobs:
           echo ""
           echo "--- G1 negative test: service_role bypasses RLS ---"
           $PSQL -c "RESET ROLE;" >/dev/null 2>&1
-          SVC_COUNT=$($PSQL -c "SET ROLE service_role; SELECT count(*) FROM model_config;" 2>&1 || true)
+          SVC_COUNT=$($PSQL -c "SET LOCAL ROLE service_role; SELECT count(*) FROM model_config;" 2>&1 | grep -E '^[0-9]+$' | head -1 || true)
           $PSQL -c "RESET ROLE;" >/dev/null 2>&1
-          if echo "$SVC_COUNT" | grep -qE "^[1-9]"; then
+          if [ -n "$SVC_COUNT" ] && [ "$SVC_COUNT" -gt 0 ] 2>/dev/null; then
             echo "  ok   service_role can SELECT model_config ($SVC_COUNT rows)"
           else
             echo "  FAIL service_role should see rows in model_config: $SVC_COUNT"
