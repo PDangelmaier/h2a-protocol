@@ -8,6 +8,7 @@ SELECT * FROM session_cost_stats;
 SELECT
   h2a_session_id,
   nexus_call_count,
+  input_tokens_total,
   round(cost_usd, 6) AS cost_usd,
   round(cost_usd * (SELECT value FROM cost_gate_config WHERE key = 'usd_eur_rate'), 6) AS cost_eur,
   created_at

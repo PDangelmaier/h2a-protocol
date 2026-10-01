@@ -20,7 +20,7 @@ vi.mock('../model-config.js', () => ({
   invalidatePricingCache: vi.fn(),
 }))
 
-function mockSupabaseForTrack(returnRow: { cost_usd: number; nexus_call_count: number }) {
+function mockSupabaseForTrack(returnRow: { cost_usd: number; nexus_call_count: number; input_tokens_total: number }) {
   return {
     rpc: vi.fn().mockResolvedValue({ data: returnRow, error: null }),
     from: vi.fn().mockReturnThis(),
@@ -31,23 +31,23 @@ function mockSupabaseForTrack(returnRow: { cost_usd: number; nexus_call_count: n
   } as unknown as Parameters<typeof trackNexusCost>[3]
 }
 
-function mockSupabaseForLimit(costUsd: number, configRows: Array<{ key: string; value: number }> = []) {
+function mockSupabaseForLimit(costUsd: number, configRows: Array<{ key: string; value: number }> = [], nexusCallCount = 5) {
   const defaultConfig = [
     { key: 'cost_limit_eur', value: 0.50 },
     { key: 'usd_eur_rate', value: 0.92 },
   ]
   const configs = configRows.length > 0 ? configRows : defaultConfig
 
-  let callCount = 0
+  let callIdx = 0
   const mock = {
     from: vi.fn().mockImplementation(() => {
-      callCount++
-      if (callCount === 1) {
+      callIdx++
+      if (callIdx === 1) {
         return {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               single: vi.fn().mockResolvedValue({
-                data: { cost_usd: costUsd },
+                data: { cost_usd: costUsd, nexus_call_count: nexusCallCount },
                 error: null,
               }),
             }),
@@ -73,7 +73,7 @@ describe('SPEC-006 AC-1: Cost tracking with atomic accumulation', () => {
   })
 
   it('calculates cost from model pricing and token counts', async () => {
-    const supabase = mockSupabaseForTrack({ cost_usd: 0.01, nexus_call_count: 1 })
+    const supabase = mockSupabaseForTrack({ cost_usd: 0.01, nexus_call_count: 1, input_tokens_total: 1000 })
     const result = await trackNexusCost('sess-1', 'main', { inputTokens: 1000, outputTokens: 500 }, supabase)
 
     expect(result.costUsd).toBeCloseTo((1000 * 0.0039 + 500 * 0.0195) / 1000, 6)
@@ -82,12 +82,13 @@ describe('SPEC-006 AC-1: Cost tracking with atomic accumulation', () => {
   })
 
   it('calls increment_session_cost RPC for atomic update', async () => {
-    const supabase = mockSupabaseForTrack({ cost_usd: 0.02, nexus_call_count: 2 })
+    const supabase = mockSupabaseForTrack({ cost_usd: 0.02, nexus_call_count: 2, input_tokens_total: 500 })
     await trackNexusCost('sess-1', 'main', { inputTokens: 500, outputTokens: 200 }, supabase)
 
     expect(supabase.rpc).toHaveBeenCalledWith('increment_session_cost', {
       p_session_id: 'sess-1',
       p_cost_delta: expect.any(Number),
+      p_input_tokens: 500,
     })
   })
 
@@ -101,7 +102,7 @@ describe('SPEC-006 AC-1: Cost tracking with atomic accumulation', () => {
   })
 
   it('returns accumulated total from DB (not local sum)', async () => {
-    const supabase = mockSupabaseForTrack({ cost_usd: 0.35, nexus_call_count: 15 })
+    const supabase = mockSupabaseForTrack({ cost_usd: 0.35, nexus_call_count: 15, input_tokens_total: 5000 })
     const result = await trackNexusCost('sess-1', 'main', { inputTokens: 100, outputTokens: 50 }, supabase)
 
     expect(result.totalCostUsd).toBe(0.35)
@@ -159,7 +160,7 @@ describe('SPEC-006 AC-4: cost_limit_reached event', () => {
     const supabase = mockSupabaseForLimit(0.60)
     await checkCostLimit('sess-1', supabase, 'en')
 
-    expect(trackCostLimitReached).toHaveBeenCalledWith('sess-1', 0.60, expect.any(Number))
+    expect(trackCostLimitReached).toHaveBeenCalledWith('sess-1', 0.60, expect.any(Number), 5)
   })
 
   it('does not fire event when below limit', async () => {

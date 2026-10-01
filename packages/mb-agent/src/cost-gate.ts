@@ -42,6 +42,7 @@ export async function trackNexusCost(
   const { data, error } = await supabase.rpc('increment_session_cost', {
     p_session_id: sessionId,
     p_cost_delta: costUsd,
+    p_input_tokens: result.inputTokens,
   })
 
   if (error) {
@@ -64,7 +65,7 @@ export async function checkCostLimit(
   const [sessionRow, configRows] = await Promise.all([
     supabase
       .from('sessions')
-      .select('cost_usd')
+      .select('cost_usd, nexus_call_count')
       .eq('h2a_session_id', sessionId)
       .single(),
     supabase
@@ -84,11 +85,12 @@ export async function checkCostLimit(
   const rate = config.get('usd_eur_rate') ?? 0.92
 
   const totalCostUsd = Number(sessionRow.data.cost_usd)
+  const callCount = Number(sessionRow.data.nexus_call_count ?? 0)
   const costEur = totalCostUsd * rate
   const exceeded = costEur > limitEur
 
   if (exceeded) {
-    trackCostLimitReached(sessionId, totalCostUsd, costEur).catch(() => {})
+    trackCostLimitReached(sessionId, totalCostUsd, costEur, callCount).catch(() => {})
   }
 
   return {

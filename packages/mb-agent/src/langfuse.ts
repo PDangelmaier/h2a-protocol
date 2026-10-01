@@ -121,7 +121,7 @@ export async function trackCostPriceMissing(purpose: string, modelId: string): P
   }
 }
 
-export async function trackCostLimitReached(sessionId: string, costUsd: number, costEur: number): Promise<void> {
+export async function trackCostLimitReached(sessionId: string, costUsd: number, costEur: number, callCount: number): Promise<void> {
   if (!config) return
 
   const body = {
@@ -132,7 +132,7 @@ export async function trackCostLimitReached(sessionId: string, costUsd: number, 
       body: {
         name: 'cost_limit_reached',
         level: 'WARNING',
-        metadata: { session_id: sessionId, cost_usd: costUsd, cost_eur: costEur },
+        metadata: { session_id: sessionId, cost_usd: costUsd, cost_eur: costEur, call_count: callCount },
       },
     }],
   }
