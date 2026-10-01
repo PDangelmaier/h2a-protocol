@@ -225,3 +225,113 @@ jobs:
 
           if [ "$FAIL" -gt 0 ]; then echo "FAIL: $FAIL check(s)"; exit 1; fi
           echo "CONSENT ORDERING PASSED"
+
+      - name: Verify RLS on all public tables (SPEC-041)
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          PGPASSWORD: verify_pass
+        run: |
+          PSQL="psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -t -A"
+          FAIL=0
+
+          echo "--- RLS enforcement: every public table must have RLS enabled ---"
+          TABLES_WITHOUT_RLS=$($PSQL -c "
+            SELECT tablename FROM pg_tables
+            WHERE schemaname = 'public'
+              AND tablename NOT LIKE 'pg_%'
+              AND tablename NOT IN (
+                SELECT tablename FROM pg_tables t
+                JOIN pg_class c ON c.relname = t.tablename
+                WHERE t.schemaname = 'public' AND c.relrowsecurity = true
+              )
+            ORDER BY tablename;
+          ")
+
+          if [ -n "$TABLES_WITHOUT_RLS" ]; then
+            echo "FAIL: Tables without RLS:"
+            echo "$TABLES_WITHOUT_RLS" | while IFS= read -r t; do
+              [ -n "$t" ] && echo "  ✘ $t" && FAIL=$((FAIL + 1))
+            done
+            echo "FAIL: RLS enforcement check failed."
+            exit 1
+          fi
+          echo "  ok   all public tables have RLS enabled"
+          echo "RLS ENFORCEMENT PASSED"
+
+      - name: Verify RLS denies anon and authenticated (SPEC-041)
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          PGPASSWORD: verify_pass
+        run: |
+          PSQL="psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -t -A"
+          FAIL=0
+          CONFIG_TABLES="model_config agent_tools ccp_personalities ccp_routing_rules ccp_deployments cost_gate_config degradation_config enrichment_cache"
+
+          for role in anon authenticated; do
+            echo "--- Testing role: $role ---"
+            for tbl in $CONFIG_TABLES; do
+              RESULT=$($PSQL -c "SET ROLE $role; SELECT count(*) FROM $tbl;" 2>&1 || true)
+              if echo "$RESULT" | grep -qi "permission denied\|new row violates"; then
+                echo "  ok   $role cannot SELECT $tbl"
+              else
+                echo "  FAIL $role CAN SELECT $tbl: $RESULT"
+                FAIL=$((FAIL + 1))
+              fi
+              $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+            done
+          done
+
+          echo ""
+          echo "--- Testing function: increment_session_cost ---"
+          for role in anon authenticated; do
+            RESULT=$($PSQL -c "SET ROLE $role; SELECT * FROM increment_session_cost('test', 0.01);" 2>&1 || true)
+            if echo "$RESULT" | grep -qi "permission denied"; then
+              echo "  ok   $role cannot execute increment_session_cost"
+            else
+              echo "  FAIL $role CAN execute increment_session_cost: $RESULT"
+              FAIL=$((FAIL + 1))
+            fi
+            $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          done
+
+          echo ""
+          echo "--- Testing view: session_cost_stats ---"
+          for role in anon authenticated; do
+            RESULT=$($PSQL -c "SET ROLE $role; SELECT * FROM session_cost_stats;" 2>&1 || true)
+            if echo "$RESULT" | grep -qi "permission denied"; then
+              echo "  ok   $role cannot SELECT session_cost_stats"
+            else
+              echo "  FAIL $role CAN SELECT session_cost_stats: $RESULT"
+              FAIL=$((FAIL + 1))
+            fi
+            $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          done
+
+          if [ "$FAIL" -gt 0 ]; then echo "FAIL: $FAIL role-check(s)"; exit 1; fi
+          echo "ROLE CHECKS PASSED"
+
+      - name: Verify migration immutability (SPEC-041)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          FAIL=0
+          echo "--- Migration immutability: no changes to migrations already on main ---"
+
+          CHANGED_MIGRATIONS=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- supabase/migrations/ | while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if git cat-file -e "$BASE_SHA:$f" 2>/dev/null; then
+              echo "$f"
+            fi
+          done)
+
+          if [ -n "$CHANGED_MIGRATIONS" ]; then
+            echo "FAIL: These migrations exist on main and were modified:"
+            echo "$CHANGED_MIGRATIONS" | while IFS= read -r m; do
+              [ -n "$m" ] && echo "  ✘ $m"
+            done
+            echo "Existing migrations must not be altered. Add a new migration instead."
+            exit 1
+          fi
+          echo "  ok   no existing migrations modified"
+          echo "MIGRATION IMMUTABILITY PASSED"
