@@ -1,11 +1,12 @@
 ---
 spec: SPEC-028
 spec_version: 1
-status: REVIEW
+status: GEMERGT
 branch: feat/spec028-state-tracking
 base_commit: 3ada735
 head_commit: 16ded4e
-last_updated: "2026-10-01T14:09:55+02:00"
+merge_commit: ed026fb
+last_updated: "2026-10-01T14:15:10+02:00"
 ---
 
 # SPEC-028: Conversation State Tracking (Thema, Stimmung, Lösungsstand)
