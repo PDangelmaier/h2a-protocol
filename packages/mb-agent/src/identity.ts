@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Channel, ChannelMetadata, IdentityTier, ResolvedIdentity, VehicleRef } from './types.js'
+import { countGrantedConsents } from './consent.js'
 
 export function pidScoreToTier(score: number): IdentityTier {
   if (score >= 80) return 'premium'
@@ -117,12 +118,7 @@ export async function resolveIdentity(
       .from('identity_links')
       .select('id')
       .eq('profile_id', profileId),
-    supabase
-      .from('consent_records')
-      .select('id', { count: 'exact', head: true })
-      .eq('customer_id', profileId)
-      .eq('granted', true)
-      .is('revoked_at', null),
+    countGrantedConsents(profileId, supabase),
   ])
 
   const p = profileData.data
@@ -139,7 +135,7 @@ export async function resolveIdentity(
     hasConnectedVehicle: false,
     totalSessions: p?.total_sessions ?? 0,
     daysSinceLastActive: daysSinceActive,
-    consentCount: consentCount.count ?? 0,
+    consentCount,
   })
 
   await supabase

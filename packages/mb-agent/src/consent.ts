@@ -13,6 +13,23 @@ export function clearConsentCache(): void {
   consentCache.clear()
 }
 
+export async function isConsentGranted(
+  profileId: string,
+  consentType: string,
+  supabase: SupabaseClient,
+): Promise<boolean> {
+  const granted = await loadGrantedConsents(profileId, supabase)
+  return granted.includes(consentType as ConsentType)
+}
+
+export async function countGrantedConsents(
+  profileId: string,
+  supabase: SupabaseClient,
+): Promise<number> {
+  const granted = await loadGrantedConsents(profileId, supabase)
+  return granted.length
+}
+
 export async function loadGrantedConsents(
   profileId: string | null,
   supabase: SupabaseClient,
@@ -26,9 +43,9 @@ export async function loadGrantedConsents(
 
   const { data, error } = await supabase
     .from('consent_records')
-    .select('consent_type, granted, granted_at, revoked_at, retention_days, created_at')
+    .select('consent_type, granted, granted_at, revoked_at, retention_days, seq')
     .eq('customer_id', profileId)
-    .order('created_at', { ascending: false })
+    .order('seq', { ascending: false })
 
   if (error) {
     console.error(`[loadGrantedConsents] DB error for ${profileId}: ${error.message}`)

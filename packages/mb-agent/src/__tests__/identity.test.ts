@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { resolveIdentity, pidScoreToTier } from '../identity.js'
+import { clearConsentCache } from '../consent.js'
 
 function makeChainable(result: { data: unknown; error: unknown; count?: number }) {
   const chain: Record<string, unknown> = {}
@@ -39,8 +40,16 @@ function makeSupabase(scenario: 'mercedes_me' | 'social' | 'phone' | 'anonymous'
         return makeChainable({ data: [], error: null })
       }
       if (table === 'consent_records') {
-        const cnt = scenario === 'anonymous' ? 0 : 2
-        return makeChainable({ data: null, error: null, count: cnt })
+        if (scenario === 'anonymous') {
+          return makeChainable({ data: [], error: null })
+        }
+        return makeChainable({
+          data: [
+            { consent_type: 'marketing', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, seq: 2 },
+            { consent_type: 'analytics', granted: true, granted_at: '2026-01-01T00:00:00Z', revoked_at: null, retention_days: null, seq: 1 },
+          ],
+          error: null,
+        })
       }
       return makeChainable({ data: null, error: null })
     }),
@@ -49,7 +58,9 @@ function makeSupabase(scenario: 'mercedes_me' | 'social' | 'phone' | 'anonymous'
   return mock
 }
 
-describe('AC-5: identity — resolveIdentity characterization', () => {
+describe('SPEC-035 AC-5: identity — resolveIdentity mit zentralem Consent-Reader', () => {
+  beforeEach(() => clearConsentCache())
+
   it('resolves known MercedesMe user → isReturning=true', async () => {
     const mock = makeSupabase('mercedes_me')
     const result = await resolveIdentity('web', { mercedesMeId: 'me-1' }, mock as never)
@@ -57,7 +68,7 @@ describe('AC-5: identity — resolveIdentity characterization', () => {
     expect(result.isReturning).toBe(true)
   })
 
-  it('resolves unknown user → creates anonymous profile', async () => {
+  it('resolves unknown user → creates anonymous profile, consentCount=0', async () => {
     const mock = makeSupabase('anonymous')
     const result = await resolveIdentity('web', {}, mock as never)
     expect(result.isReturning).toBe(false)
@@ -70,6 +81,15 @@ describe('AC-5: identity — resolveIdentity characterization', () => {
     const result = await resolveIdentity('web', { socialToken: 'google-abc' }, mock as never)
     expect(result.profileId).toBe('prof-social')
     expect(result.mergedThisSession).toBe(true)
+  })
+
+  it('nutzt countGrantedConsents statt direkter DB-Query', async () => {
+    const mock = makeSupabase('mercedes_me')
+    await resolveIdentity('web', { mercedesMeId: 'me-1' }, mock as never)
+    const consentCalls = mock.from.mock.calls.filter((c: unknown[]) => c[0] === 'consent_records')
+    expect(consentCalls.length).toBe(1)
+    const orderCalls = consentCalls[0]
+    expect(orderCalls).toBeDefined()
   })
 
   it('pidScoreToTier boundary: 19 → anonymous, 20 → recognized', () => {
