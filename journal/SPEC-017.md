@@ -1,11 +1,12 @@
 ---
 spec: SPEC-017
 spec_version: 1
-status: REVIEW
+status: GEMERGT
 branch: feat/spec017-adversarial-multiturn
 base_commit: 4fac97f
 head_commit: 557197e
-last_updated: "2026-10-01T13:56:19+02:00"
+merge_commit: 168fb90
+last_updated: "2026-10-01T14:03:47+02:00"
 ---
 
 # SPEC-017: Mehrstufige Angriffs-Tests gegen Abwehrschichten
