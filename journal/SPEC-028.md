@@ -4,7 +4,7 @@ spec_version: 1
 status: REVIEW
 branch: feat/spec028-state-tracking
 base_commit: 3ada735
-head_commit: null
+head_commit: 16ded4e
 last_updated: "2026-10-01T14:09:55+02:00"
 ---
 
@@ -91,11 +91,16 @@ Keine.
 
 ## Commits
 
-- (pending commit)
+- 16ded4e: feat(SPEC-028): conversation state tracking (topic, sentiment, resolution)
 
 ## CI Evidence
 
-(wird nach Push ergänzt)
+```
+$ gh pr checks 36
+tests      pass  32s  https://github.com/PDangelmaier/h2a-protocol/actions/runs/36860076330
+db-verify  pass  23s  https://github.com/PDangelmaier/h2a-protocol/actions/runs/36860076335
+merge-gate fail  2s   (erwartet — Label fehlt noch)
+```
 
 ## Offene Punkte
 
