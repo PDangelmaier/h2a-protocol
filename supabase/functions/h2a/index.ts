@@ -227,8 +227,7 @@ async function handleStream(req: Request): Promise<Response> {
     }
   }
 
-  const supabaseForTtft = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-  const modelId = await resolveModel('main', supabaseForTtft).catch(() => 'unknown')
+  const modelId = await resolveModel('main', supabase).catch(() => 'unknown')
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -268,7 +267,7 @@ async function handleStream(req: Request): Promise<Response> {
           model: modelId,
           toolRounds: result.toolsUsed.length,
         }
-        trackTtft(ttftMetrics, supabaseForTtft).catch(() => {})
+        trackTtft(ttftMetrics, supabase).catch(() => {})
       } catch (err) {
         sendSseEvent(controller, { type: 'agent.frame', frameType: 'error', content: { message: 'An unexpected error occurred' } })
         sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
