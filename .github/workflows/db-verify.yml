@@ -360,7 +360,7 @@ jobs:
           FAIL=0
           ALLOWED_FUNCTIONS=""
 
-          echo "--- G3: No function in public with EXECUTE for PUBLIC, anon, or authenticated ---"
+          echo "--- G3: No user-defined function in public with EXECUTE for PUBLIC, anon, or authenticated ---"
           LEAKED=$($PSQL -c "
             WITH func_grants AS (
               SELECT p.proname,
@@ -369,6 +369,12 @@ jobs:
               JOIN pg_namespace n ON n.oid = p.pronamespace
               WHERE n.nspname = 'public'
                 AND p.proname NOT IN (SELECT unnest(string_to_array('$ALLOWED_FUNCTIONS', ',')))
+                -- Exclude extension-owned functions (pgvector, uuid-ossp, pgcrypto, etc.)
+                AND NOT EXISTS (
+                  SELECT 1 FROM pg_depend d
+                  JOIN pg_extension e ON e.oid = d.refobjid
+                  WHERE d.objid = p.oid AND d.deptype = 'e'
+                )
             )
             SELECT fg.proname,
                    CASE WHEN fg.grantee_oid = 0 THEN 'PUBLIC' ELSE r.rolname END AS grantee

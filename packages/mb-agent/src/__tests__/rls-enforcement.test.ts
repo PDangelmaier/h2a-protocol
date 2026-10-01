@@ -115,7 +115,7 @@ describe('SPEC-041 AC-4: CI RLS enforcement step', () => {
       new URL('../../../../.github/workflows/db-verify.yml', import.meta.url),
       'utf-8',
     )
-    expect(content).toContain('has_function_privilege')
+    expect(content).toContain('aclexplode')
     expect(content).toContain('FUNCTION EXECUTE CHECK PASSED')
   })
 
