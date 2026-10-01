@@ -12,6 +12,7 @@ import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
 import { sanitizeInput } from './input-sanitizer.js'
 import { injectCanary, validateOutput } from './output-validator.js'
+import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
 
 interface SessionState {
   id: string
@@ -76,7 +77,18 @@ export async function reasoningLoop(
   const tools = await getAvailableTools(context, supabase)
   const nexusRequest = await buildNexusRequest(session, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
 
-  const response = await processResponse(nexusRequest, config.nexus, session.profileId, session.locale, supabase)
+  const costCheck = await checkCostLimit(session.id, supabase, session.locale)
+  if (costCheck.exceeded) {
+    return {
+      response: costCheck.shutdownMessage!,
+      intent,
+      toolsUsed: [],
+      newMemories: [],
+      securityEvents: [],
+    }
+  }
+
+  const response = await processResponse(nexusRequest, config.nexus, session.id, session.profileId, session.locale, supabase)
 
   const outputCheck = validateOutput(response.text, session.id, session.locale)
   if (!outputCheck.safe) {
@@ -215,6 +227,7 @@ const MAX_TOOL_ROUNDS = 5
 async function processResponse(
   request: NexusRequest,
   nexusConfig: NexusConfig,
+  sessionId: string,
   profileId: string,
   locale: string,
   supabase: SupabaseClient,
@@ -225,10 +238,23 @@ async function processResponse(
   const grantedConsents = await loadGrantedConsents(profileId, supabase)
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const estimate = estimateInputTokens(
+      currentRequest.system[0]?.text ?? '',
+      currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
+      currentRequest.toolConfig,
+    )
+    await checkTokenBudget(sessionId, estimate)
+
     const result = await callNexusSync(currentRequest, nexusConfig)
+    await trackNexusCost(sessionId, 'main', result, supabase)
 
     if (result.stopReason !== 'tool_use' || result.toolCalls.length === 0) {
       return { text: result.text, toolsUsed, newMemories }
+    }
+
+    const limitCheck = await checkCostLimit(sessionId, supabase, locale)
+    if (limitCheck.exceeded) {
+      return { text: limitCheck.shutdownMessage!, toolsUsed, newMemories }
     }
 
     const toolResults = await Promise.all(
@@ -258,7 +284,15 @@ async function processResponse(
     }
   }
 
+  const finalEstimate = estimateInputTokens(
+    currentRequest.system[0]?.text ?? '',
+    currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
+    currentRequest.toolConfig,
+  )
+  await checkTokenBudget(sessionId, finalEstimate)
+
   const finalResult = await callNexusSync(currentRequest, nexusConfig)
+  await trackNexusCost(sessionId, 'main', finalResult, supabase)
   return { text: finalResult.text, toolsUsed, newMemories }
 }
 

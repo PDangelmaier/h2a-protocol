@@ -4,6 +4,13 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
 }))
 
+vi.mock('../cost-gate.js', () => ({
+  trackNexusCost: vi.fn().mockResolvedValue({ costUsd: 0.001, totalCostUsd: 0.01, callCount: 1 }),
+  checkCostLimit: vi.fn().mockResolvedValue({ exceeded: false, totalCostUsd: 0.01, limitEur: 0.50 }),
+  estimateInputTokens: vi.fn().mockReturnValue({ total: 1000, systemTokens: 500, historyTokens: 400, toolTokens: 100 }),
+  checkTokenBudget: vi.fn().mockResolvedValue(true),
+}))
+
 import { reasoningLoop } from '../reasoning.js'
 import type { AgentConfig } from '../types.js'
 

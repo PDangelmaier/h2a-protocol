@@ -121,6 +121,76 @@ export async function trackCostPriceMissing(purpose: string, modelId: string): P
   }
 }
 
+export async function trackCostLimitReached(sessionId: string, costUsd: number, costEur: number, callCount: number): Promise<void> {
+  if (!config) return
+
+  const body = {
+    batch: [{
+      id: crypto.randomUUID(),
+      type: 'event-create',
+      timestamp: new Date().toISOString(),
+      body: {
+        name: 'cost_limit_reached',
+        level: 'WARNING',
+        metadata: { session_id: sessionId, cost_usd: costUsd, cost_eur: costEur, call_count: callCount },
+      },
+    }],
+  }
+
+  const auth = btoa(`${config.publicKey}:${config.secretKey}`)
+
+  try {
+    await fetch(`${config.baseUrl}/api/public/ingestion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    // fire-and-forget
+  }
+}
+
+export async function trackTokenBudgetExceeded(sessionId: string, estimate: { total: number; systemTokens: number; historyTokens: number; toolTokens: number }): Promise<void> {
+  if (!config) return
+
+  const body = {
+    batch: [{
+      id: crypto.randomUUID(),
+      type: 'event-create',
+      timestamp: new Date().toISOString(),
+      body: {
+        name: 'token_budget_exceeded',
+        level: 'WARNING',
+        metadata: {
+          session_id: sessionId,
+          estimated_tokens: estimate.total,
+          system_tokens: estimate.systemTokens,
+          history_tokens: estimate.historyTokens,
+          tool_tokens: estimate.toolTokens,
+        },
+      },
+    }],
+  }
+
+  const auth = btoa(`${config.publicKey}:${config.secretKey}`)
+
+  try {
+    await fetch(`${config.baseUrl}/api/public/ingestion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    // fire-and-forget
+  }
+}
+
 export async function trackMissingPin(purpose: string): Promise<void> {
   if (!config) return
 

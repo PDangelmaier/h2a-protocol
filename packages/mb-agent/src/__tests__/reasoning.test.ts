@@ -24,6 +24,10 @@ vi.mock('../memory.js', () => ({
 
 vi.mock('../model-config.js', () => ({
   resolveModel: vi.fn().mockResolvedValue('claude-sonnet-4-6'),
+  resolveModelPricing: vi.fn().mockResolvedValue({
+    purpose: 'main', modelId: 'claude-sonnet-4-6',
+    costPerInput1k: 0.0039, costPerOutput1k: 0.0195, costPerCachedInput1k: 0.00039,
+  }),
 }))
 
 const mockTrackPersistFailed = vi.fn().mockResolvedValue(undefined)
@@ -55,6 +59,13 @@ vi.mock('../consent.js', () => ({
   loadGrantedConsents: (...args: unknown[]) => mockLoadGrantedConsents(...args),
 }))
 
+vi.mock('../cost-gate.js', () => ({
+  trackNexusCost: vi.fn().mockResolvedValue({ costUsd: 0.001, totalCostUsd: 0.01, callCount: 1 }),
+  checkCostLimit: vi.fn().mockResolvedValue({ exceeded: false, totalCostUsd: 0.01, limitEur: 0.50 }),
+  estimateInputTokens: vi.fn().mockReturnValue({ total: 1000, systemTokens: 500, historyTokens: 400, toolTokens: 100 }),
+  checkTokenBudget: vi.fn().mockResolvedValue(true),
+}))
+
 import { createClient } from '@supabase/supabase-js'
 import { reasoningLoop } from '../reasoning.js'
 
@@ -64,7 +75,10 @@ function makeMockSupabase() {
   for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
   chain.single = vi.fn().mockResolvedValue({ data: { display_name: 'Max', turn_count: 0 }, error: null })
   chain.maybeSingle = vi.fn().mockResolvedValue({ data: { id: 'conv-1', turn_count: 0 }, error: null })
-  const mock = { from: vi.fn().mockReturnValue(chain) }
+  const mock = {
+    from: vi.fn().mockReturnValue(chain),
+    rpc: vi.fn().mockResolvedValue({ data: { cost_usd: 0.01, nexus_call_count: 1 }, error: null }),
+  }
   return mock
 }
 
