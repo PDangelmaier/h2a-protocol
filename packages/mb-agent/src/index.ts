@@ -34,3 +34,4 @@ export { buildDegradedResponse, formatDegradedForCustomer } from './degradation.
 export type { DegradationReason } from './degradation.js'
 export { loadToolStatusMessages, resolveStatusMessage, buildStatusEvent, clearToolStatusCache } from './tool-status.js'
 export type { StatusEvent, OnStatusEvent } from './tool-status.js'
+export { extractMemories, archiveMemory, trackMemoryAccess, validateExtractionOutput } from './memory-extraction.js'
