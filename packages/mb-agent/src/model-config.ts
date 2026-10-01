@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { trackModelSwitch, trackMissingPin, trackCostPriceMissing } from './langfuse.js'
 
-export type ModelPurpose = 'main' | 'tool-routing' | 'memory-extraction' | 'evaluation' | 'summarization'
+export type ModelPurpose = 'main' | 'fast' | 'tool-routing' | 'memory-extraction' | 'evaluation' | 'summarization'
 
 export interface ModelConfigRow {
   id: string

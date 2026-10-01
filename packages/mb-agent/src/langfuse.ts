@@ -331,6 +331,45 @@ export async function trackPromptCacheRejected(sessionId: string): Promise<void>
   }
 }
 
+export async function trackRoutingDecision(sessionId: string, event: { complexity: string; purpose: string; reason: string }): Promise<void> {
+  if (!config) {
+    console.log(JSON.stringify({ event: 'routing_decision', sessionId, ...event, ts: new Date().toISOString() }))
+    return
+  }
+
+  const body = {
+    batch: [{
+      id: crypto.randomUUID(),
+      type: 'event-create',
+      timestamp: new Date().toISOString(),
+      body: {
+        name: 'routing_decision',
+        metadata: {
+          session_id: sessionId,
+          complexity: event.complexity,
+          purpose: event.purpose,
+          reason: event.reason,
+        },
+      },
+    }],
+  }
+
+  const auth = btoa(`${config.publicKey}:${config.secretKey}`)
+
+  try {
+    await fetch(`${config.baseUrl}/api/public/ingestion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    // fire-and-forget
+  }
+}
+
 export async function trackMissingPin(purpose: string): Promise<void> {
   if (!config) return
 

@@ -4,7 +4,7 @@ import { buildSystemPrompt, buildSystemPromptSplit, resolvePersonality } from '.
 import type { ResolvedPersonalityWithVersion, PromptBuild } from './ccp.js'
 import { computeIntentScore, scoreToProactivity } from './isp.js'
 import { loadAgentMemories, persistMemory } from './memory.js'
-import { trackPersistTurnFailed, trackPromptCacheRejected, getLangfuseConfig } from './langfuse.js'
+import { trackPersistTurnFailed, trackPromptCacheRejected, trackRoutingDecision, getLangfuseConfig } from './langfuse.js'
 import { resolveModel, resolveFallbackChain } from './model-config.js'
 import type { FallbackChainEntry } from './model-config.js'
 import { callNexusSync } from './nexus.js'
@@ -27,6 +27,8 @@ import { extractMemories } from './memory-extraction.js'
 import { createLoopState, recordToolRound, checkSoftLoop, buildSoftLoopHint, emitTraceEvent, emitSoftLoopEvent, createLangfuseEmitter, createStructuredLogEmitter } from './loop-telemetry.js'
 import type { TraceEmitter } from './loop-telemetry.js'
 import { needsSummarization, summarizeOlderTurns, loadLatestSummary, enforceHardLimit, buildHistoryWithSummary, estimateSessionTokens, getSummarizationConfig } from './summarization.js'
+import { resolveRoutingPurpose } from './turn-classifier.js'
+import type { ClassificationResult } from './turn-classifier.js'
 
 interface SessionState {
   id: string
@@ -118,7 +120,9 @@ export async function reasoningLoop(
   const staticPartForCache = promptBuild.staticPart
   const dynamicPartWithCanary = `${canaryStr}\n${promptBuild.dynamicPart}`
 
-  let nexusRequest = await buildNexusRequest(sessionForRequest, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
+  const { request: rawNexusRequest, routing } = await buildNexusRequest(sessionForRequest, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
+  trackRoutingDecision(session.id, routing).catch(() => {})
+  let nexusRequest = rawNexusRequest
   if (cacheConfig.enabled) {
     nexusRequest = applyCacheToRequest(nexusRequest, staticPartForCache, dynamicPartWithCanary, true)
   }
@@ -277,6 +281,11 @@ async function loadRecentSignals(profileId: string, supabase: SupabaseClient) {
   }))
 }
 
+interface NexusRequestWithRouting {
+  request: NexusRequest
+  routing: ClassificationResult
+}
+
 async function buildNexusRequest(
   session: SessionState,
   signal: UserSignal,
@@ -284,8 +293,9 @@ async function buildNexusRequest(
   temperature: number,
   tools: Awaited<ReturnType<typeof getAvailableTools>>,
   supabase: SupabaseClient,
-): Promise<NexusRequest> {
-  const modelId = await resolveModel('main', supabase)
+): Promise<NexusRequestWithRouting> {
+  const routing = await resolveRoutingPurpose(signal.content, supabase)
+  const modelId = await resolveModel(routing.purpose, supabase)
 
   const messages = [
     ...session.conversationHistory.map(m => ({
@@ -306,7 +316,7 @@ async function buildNexusRequest(
     request.toolConfig = { tools: formatToolsForNexus(tools) }
   }
 
-  return request
+  return { request, routing }
 }
 
 interface ProcessedResponse {
