@@ -229,6 +229,12 @@ async function handleStream(req: Request): Promise<Response> {
       try {
         const result = await reasoningLoop(sessionState, userSignal, agentConfig)
 
+        if (result.securityEvents && result.securityEvents.length > 0) {
+          for (const ev of result.securityEvents) {
+            sendSseEvent(controller, { type: 'security_event', eventType: ev.type })
+          }
+        }
+
         sendSseEvent(controller, {
           type: 'agent.frame',
           frameType: 'text',

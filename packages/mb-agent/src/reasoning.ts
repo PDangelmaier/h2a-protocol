@@ -10,6 +10,8 @@ import type { NexusRequest } from './nexus.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
 import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
+import { sanitizeInput } from './input-sanitizer.js'
+import { injectCanary, validateOutput } from './output-validator.js'
 
 interface SessionState {
   id: string
@@ -33,11 +35,18 @@ interface UserSignal {
   timestamp: Date
 }
 
+export interface SecurityEvent {
+  type: 'prompt_injection_detected' | 'system_prompt_leak_blocked'
+  attackType?: string
+  reason?: string
+}
+
 interface ReasoningResult {
   response: string
   intent: IntentSnapshot
   toolsUsed: string[]
   newMemories: string[]
+  securityEvents?: SecurityEvent[]
 }
 
 export async function reasoningLoop(
@@ -48,12 +57,37 @@ export async function reasoningLoop(
   const { createClient } = await import('@supabase/supabase-js')
   const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey)
 
+  const sanitized = sanitizeInput(signal.content)
+  if (!sanitized.safe) {
+    return {
+      response: session.locale === 'de'
+        ? 'Entschuldigung, ich kann diese Anfrage nicht bearbeiten. Kann ich Ihnen bei etwas anderem helfen?'
+        : 'I apologize, I cannot process this request. Can I help you with something else?',
+      intent: { intentScore: 0, journeyPhase: session.journeyPhase, purchaseIntent: 0, primaryInterest: null, proactivityLevel: 'still', computedAt: new Date() },
+      toolsUsed: [],
+      newMemories: [],
+      securityEvents: sanitized.violations.map(v => ({ type: 'prompt_injection_detected' as const, attackType: v.type })),
+    }
+  }
+
   const context = await loadContext(session, supabase)
   const { personality, intent, memories } = await computeIntelligence(context, session, supabase)
+  const systemPromptWithCanary = injectCanary(personality.systemPrompt, session.id)
   const tools = await getAvailableTools(context, supabase)
-  const nexusRequest = await buildNexusRequest(session, signal, personality.systemPrompt, personality.temperature, tools, supabase)
+  const nexusRequest = await buildNexusRequest(session, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
 
   const response = await processResponse(nexusRequest, config.nexus, session.profileId, session.locale, supabase)
+
+  const outputCheck = validateOutput(response.text, session.id, session.locale)
+  if (!outputCheck.safe) {
+    return {
+      response: outputCheck.replacement!,
+      intent,
+      toolsUsed: response.toolsUsed,
+      newMemories: [],
+      securityEvents: [{ type: 'system_prompt_leak_blocked' as const, reason: outputCheck.reason! }],
+    }
+  }
 
   const turnId = crypto.randomUUID()
   persistTurn(session, signal, response, intent, supabase).catch((err: unknown) => {
@@ -67,6 +101,7 @@ export async function reasoningLoop(
     intent,
     toolsUsed: response.toolsUsed,
     newMemories: response.newMemories,
+    securityEvents: [],
   }
 }
 
@@ -208,7 +243,8 @@ async function processResponse(
         )
         const maxTokens = getToolMaxTokens(call.name)
         const truncated = truncateToolResult(toolResult.data, { maxTokens })
-        return { toolUseId: call.id, content: [{ json: truncated }] }
+        const delimited = { _h2a_tool_data: true, tool: call.name, data: truncated }
+        return { toolUseId: call.id, content: [{ json: delimited }] }
       }),
     )
 
