@@ -1,8 +1,13 @@
 import type { NexusConfig } from './types.js'
 
+export interface SystemBlock {
+  text?: string
+  cachePoint?: { type: 'default' }
+}
+
 export interface NexusRequest {
   modelId: string
-  system: Array<{ text: string }>
+  system: SystemBlock[]
   messages: Array<{ role: string; content: Array<{ text: string }> }>
   inferenceConfig: { temperature: number; maxTokens: number }
   toolConfig?: { tools: Array<{ toolSpec: { name: string; description: string; inputSchema: { json: Record<string, unknown> } } }> }
@@ -14,7 +19,7 @@ interface StreamEvent {
   contentBlock?: { toolUse?: { toolUseId: string; name: string } }
   toolUse?: { input: string }
   stopReason?: string
-  usage?: { inputTokens: number; outputTokens: number }
+  usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }
 }
 
 export interface NexusStreamResult {
@@ -23,6 +28,7 @@ export interface NexusStreamResult {
   stopReason: string
   inputTokens: number
   outputTokens: number
+  cacheReadInputTokens: number
 }
 
 export async function callNexusStream(
@@ -85,7 +91,7 @@ export async function callNexusSync(
   const data = await response.json() as {
     output?: { message?: { content?: Array<{ text?: string; toolUse?: { toolUseId: string; name: string; input: Record<string, unknown> } }> } }
     stopReason?: string
-    usage?: { inputTokens: number; outputTokens: number }
+    usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }
   }
 
   const content = data.output?.message?.content ?? []
@@ -102,6 +108,7 @@ export async function callNexusSync(
     stopReason: data.stopReason ?? 'end_turn',
     inputTokens: data.usage?.inputTokens ?? 0,
     outputTokens: data.usage?.outputTokens ?? 0,
+    cacheReadInputTokens: data.usage?.cacheReadInputTokens ?? 0,
   }
 }
 
@@ -119,6 +126,7 @@ async function parseEventStream(response: Response): Promise<NexusStreamResult> 
   let stopReason = 'end_turn'
   let inputTokens = 0
   let outputTokens = 0
+  let cacheReadInputTokens = 0
 
   try {
     while (true) {
@@ -158,6 +166,7 @@ async function parseEventStream(response: Response): Promise<NexusStreamResult> 
           case 'metadata':
             inputTokens = event.usage?.inputTokens ?? inputTokens
             outputTokens = event.usage?.outputTokens ?? outputTokens
+            cacheReadInputTokens = event.usage?.cacheReadInputTokens ?? cacheReadInputTokens
             break
         }
       }
@@ -166,7 +175,7 @@ async function parseEventStream(response: Response): Promise<NexusStreamResult> 
     reader.releaseLock()
   }
 
-  return { text, toolCalls, stopReason, inputTokens, outputTokens }
+  return { text, toolCalls, stopReason, inputTokens, outputTokens, cacheReadInputTokens }
 }
 
 interface ExtractedEvents {

@@ -234,11 +234,11 @@ describe('SPEC-006 AC-6: Config from DB (no deploy to change)', () => {
 })
 
 describe('SPEC-006 AC-2: No Nexus call bypasses cost tracking', () => {
-  it('grep confirms every callWithFallback site in reasoning.ts has a matching trackNexusCost', async () => {
+  it('grep confirms every callWithCacheFallback site in reasoning.ts has a matching trackNexusCost', async () => {
     const { readFileSync } = await import('fs')
     const content = readFileSync(new URL('../reasoning.ts', import.meta.url), 'utf-8')
 
-    const fallbackCalls = content.match(/callWithFallback\(/g) ?? []
+    const fallbackCalls = content.match(/callWithCacheFallback\(/g) ?? []
     const trackCalls = content.match(/trackNexusCost\(/g) ?? []
 
     expect(fallbackCalls.length).toBeGreaterThanOrEqual(2)
