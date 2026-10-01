@@ -2,11 +2,17 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
   CCPPersonality, Channel, CustomerContext, JourneyPhase, MemoryType, ProactivityLevel,
 } from './types.js'
+import { resolveActivePrompt } from './prompt-versioning.js'
+import type { PromptVersion } from './prompt-versioning.js'
+
+export interface ResolvedPersonalityWithVersion extends CCPPersonality {
+  promptVersion: number | null
+}
 
 export async function resolvePersonality(
   context: CustomerContext,
   supabase: SupabaseClient,
-): Promise<CCPPersonality> {
+): Promise<ResolvedPersonalityWithVersion> {
   const { data } = await supabase
     .from('ccp_routing_rules')
     .select('personality_id, priority')
@@ -25,14 +31,18 @@ export async function resolvePersonality(
     .eq('id', personalityId)
     .single()
 
-  if (!personality) return defaultPersonality()
+  if (!personality) return { ...defaultPersonality(), promptVersion: null }
+
+  const activePrompt = await resolveActivePrompt(personality.id, supabase)
+  const staticPrompt = activePrompt?.staticPrompt ?? personality.system_prompt
 
   return {
     id: personality.id,
     slug: personality.slug,
     displayName: personality.display_name,
-    systemPrompt: personality.system_prompt,
+    systemPrompt: staticPrompt,
     temperature: personality.temperature,
+    promptVersion: activePrompt?.version ?? null,
   }
 }
 
@@ -91,6 +101,12 @@ interface AgentMemory {
   content: string
 }
 
+export interface PromptBuild {
+  full: string
+  staticPart: string
+  dynamicPart: string
+}
+
 export function buildSystemPrompt(
   personality: CCPPersonality,
   customer: CustomerContext,
@@ -98,8 +114,20 @@ export function buildSystemPrompt(
   channel: Channel,
   market: string,
 ): string {
-  const layers = [
-    personality.systemPrompt,
+  const { full } = buildSystemPromptSplit(personality, customer, memories, channel, market)
+  return full
+}
+
+export function buildSystemPromptSplit(
+  personality: CCPPersonality,
+  customer: CustomerContext,
+  memories: AgentMemory[],
+  channel: Channel,
+  market: string,
+): PromptBuild {
+  const staticPart = personality.systemPrompt
+
+  const dynamicLayers = [
     `Markt: ${market}. Sprache: ${customer.locale}.`,
     getChannelRules(channel),
     getJourneyPhaseRules(customer.journeyPhase),
@@ -109,7 +137,13 @@ export function buildSystemPrompt(
     buildGuardrailLayer(),
     buildComplianceLayer(market),
   ]
-  return layers.filter(Boolean).join('\n\n')
+  const dynamicPart = dynamicLayers.filter(Boolean).join('\n\n')
+
+  return {
+    full: [staticPart, dynamicPart].filter(Boolean).join('\n\n'),
+    staticPart,
+    dynamicPart,
+  }
 }
 
 function buildIdentityLayer(customer: CustomerContext): string {

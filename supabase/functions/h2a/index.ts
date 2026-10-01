@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop, filterPii, trackTtft, resolveModel } from '@h2a/mb-agent'
+import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions } from '@h2a/mb-agent'
 import type { PiiHit, StatusEvent, TtftMetrics } from '@h2a/mb-agent'
 
 const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
@@ -46,6 +46,9 @@ Deno.serve(async (req) => {
     }
     if (path.startsWith('/admin/models')) {
       return await handleAdminModels(req, path)
+    }
+    if (path.startsWith('/admin/prompts')) {
+      return await handleAdminPrompts(req, path)
     }
     return jsonResponse({ error: 'Not found' }, 404)
   } catch (err) {
@@ -418,6 +421,51 @@ async function handleAdminModels(req: Request, path: string): Promise<Response> 
       .single()
 
     if (error) return jsonResponse({ error: error.message }, 500)
+    return jsonResponse(rolledBack)
+  }
+
+  return jsonResponse({ error: 'Not found' }, 404)
+}
+
+async function handleAdminPrompts(req: Request, path: string): Promise<Response> {
+  const authResult = await verifyAdminIdentity(req)
+  if ('error' in authResult) return jsonResponse({ error: authResult.error }, authResult.status)
+  const identity = authResult.identity
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+  if (path === '/admin/prompts' && req.method === 'GET') {
+    const url = new URL(req.url)
+    const personalityId = url.searchParams.get('personalityId')
+    if (!personalityId) return jsonResponse({ error: 'personalityId query param required' }, 400)
+
+    const versions = await listPromptVersions(personalityId, supabase)
+    return jsonResponse(versions)
+  }
+
+  if (path === '/admin/prompts/register' && req.method === 'POST') {
+    const body = await req.json()
+    if (!body.personalityId || !body.staticPrompt) {
+      return jsonResponse({ error: 'personalityId and staticPrompt required' }, 400)
+    }
+
+    const version = await registerPromptVersion(body.personalityId, body.staticPrompt, supabase)
+    return jsonResponse(version, 201)
+  }
+
+  if (path === '/admin/prompts/activate' && req.method === 'POST') {
+    const body = await req.json()
+    if (!body.versionId) return jsonResponse({ error: 'versionId required' }, 400)
+
+    const result = await activatePromptVersion(body.versionId, identity, supabase)
+    return jsonResponse(result)
+  }
+
+  if (path === '/admin/prompts/rollback' && req.method === 'POST') {
+    const body = await req.json()
+    if (!body.personalityId) return jsonResponse({ error: 'personalityId required' }, 400)
+
+    const rolledBack = await rollbackPromptVersion(body.personalityId, identity, supabase)
     return jsonResponse(rolledBack)
   }
 

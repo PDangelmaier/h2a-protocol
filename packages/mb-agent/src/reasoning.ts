@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AgentConfig, CustomerContext, IntentSnapshot, NexusConfig } from './types.js'
 import { buildSystemPrompt, resolvePersonality } from './ccp.js'
+import type { ResolvedPersonalityWithVersion } from './ccp.js'
 import { computeIntentScore, scoreToProactivity } from './isp.js'
 import { loadAgentMemories, persistMemory } from './memory.js'
 import { trackPersistTurnFailed, getLangfuseConfig } from './langfuse.js'
@@ -58,6 +59,7 @@ interface ReasoningResult {
   newMemories: string[]
   securityEvents?: SecurityEvent[]
   degraded?: { reason: DegradationReason }
+  promptVersion?: number | null
 }
 
 export async function reasoningLoop(
@@ -83,7 +85,7 @@ export async function reasoningLoop(
   }
 
   const context = await loadContext(session, supabase)
-  const { personality, intent, memories } = await computeIntelligence(context, session, supabase)
+  const { personality, intent, memories, promptVersion } = await computeIntelligence(context, session, supabase)
   const systemPromptWithCanary = injectCanary(personality.systemPrompt, session.id)
   const tools = await getAvailableTools(context, supabase)
   const nexusRequest = await buildNexusRequest(session, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
@@ -135,7 +137,7 @@ export async function reasoningLoop(
   }
 
   const turnId = crypto.randomUUID()
-  persistTurn(session, signal, response, intent, supabase).catch((err: unknown) => {
+  persistTurn(session, signal, response, intent, supabase, promptVersion).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[persistTurn] session=${session.id} turn=${turnId}: ${msg}`)
     trackPersistTurnFailed(session.id, turnId, msg).catch(() => {})
@@ -156,6 +158,7 @@ export async function reasoningLoop(
     toolsUsed: response.toolsUsed,
     newMemories: response.newMemories,
     securityEvents: [],
+    promptVersion,
     ...(response.degraded ? { degraded: response.degraded } : {}),
   }
 }
@@ -207,7 +210,7 @@ async function computeIntelligence(
     computedAt: new Date(),
   }
 
-  return { personality: { ...personality, systemPrompt }, intent, memories }
+  return { personality: { ...personality, systemPrompt }, intent, memories, promptVersion: personality.promptVersion ?? null }
 }
 
 async function loadRecentSignals(profileId: string, supabase: SupabaseClient) {
@@ -397,6 +400,7 @@ async function persistTurn(
   response: ProcessedResponse,
   _intent: IntentSnapshot,
   supabase: SupabaseClient,
+  promptVersion?: number | null,
 ): Promise<void> {
   const { data: conv } = await supabase
     .from('conversations')
@@ -424,6 +428,7 @@ async function persistTurn(
       role: 'assistant',
       content: { text: response.text },
       tools_used: response.toolsUsed,
+      prompt_version: promptVersion ?? null,
       sequence: nextSeq + 1,
     },
   ])
