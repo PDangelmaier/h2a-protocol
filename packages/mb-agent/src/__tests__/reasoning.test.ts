@@ -10,6 +10,11 @@ vi.mock('../ccp.js', () => ({
     systemPrompt: 'Du bist der MB Assistent.', temperature: 0.3,
   }),
   buildSystemPrompt: vi.fn().mockReturnValue('System prompt built'),
+  buildSystemPromptSplit: vi.fn().mockReturnValue({
+    staticPart: 'Du bist der MB Assistent.',
+    dynamicPart: 'locale=de channel=web',
+    full: 'Du bist der MB Assistent.\n\nlocale=de channel=web',
+  }),
 }))
 
 vi.mock('../isp.js', () => ({
@@ -36,6 +41,7 @@ vi.mock('../langfuse.js', () => ({
   trackModelSwitch: vi.fn(),
   trackMissingPin: vi.fn(),
   trackPersistTurnFailed: (...args: unknown[]) => mockTrackPersistFailed(...args),
+  trackPromptCacheRejected: vi.fn().mockResolvedValue(undefined),
   getLangfuseConfig: vi.fn().mockReturnValue(null),
 }))
 
@@ -69,6 +75,15 @@ vi.mock('../fallback.js', async (importOriginal) => {
     }),
   }
 })
+
+vi.mock('../prompt-cache.js', () => ({
+  loadPromptCacheConfig: vi.fn().mockResolvedValue({ enabled: false }),
+  applyCacheToRequest: vi.fn().mockImplementation((req: unknown) => req),
+  callWithCacheFallback: vi.fn().mockImplementation(async (request: unknown) => {
+    const result = await mockNexusSync(request)
+    return { result: { ...result, actualModelId: 'claude-sonnet-4-6', fallbacksUsed: 0 }, cacheRejected: false }
+  }),
+}))
 
 const mockExecuteTool = vi.fn()
 vi.mock('../tools.js', () => ({

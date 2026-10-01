@@ -30,12 +30,15 @@ const SOFT_TOKEN_LIMIT = 8_000
 export async function trackNexusCost(
   sessionId: string,
   purpose: ModelPurpose,
-  result: Pick<NexusStreamResult, 'inputTokens' | 'outputTokens'>,
+  result: Pick<NexusStreamResult, 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens'>,
   supabase: SupabaseClient,
 ): Promise<CostTrackResult> {
   const pricing = await resolveModelPricing(purpose, supabase)
+  const cachedTokens = result.cacheReadInputTokens ?? 0
+  const uncachedInputTokens = result.inputTokens - cachedTokens
   const costUsd =
-    (result.inputTokens * pricing.costPerInput1k +
+    (uncachedInputTokens * pricing.costPerInput1k +
+      cachedTokens * pricing.costPerCachedInput1k +
       result.outputTokens * pricing.costPerOutput1k) /
     1000
 

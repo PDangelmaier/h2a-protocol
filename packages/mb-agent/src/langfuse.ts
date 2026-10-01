@@ -296,6 +296,41 @@ export async function trackDegradedResponse(reason: string): Promise<void> {
   }
 }
 
+export async function trackPromptCacheRejected(sessionId: string): Promise<void> {
+  if (!config) {
+    console.log(JSON.stringify({ event: 'prompt_cache_rejected', sessionId, ts: new Date().toISOString() }))
+    return
+  }
+
+  const body = {
+    batch: [{
+      id: crypto.randomUUID(),
+      type: 'event-create',
+      timestamp: new Date().toISOString(),
+      body: {
+        name: 'prompt_cache_rejected',
+        level: 'WARNING',
+        metadata: { session_id: sessionId },
+      },
+    }],
+  }
+
+  const auth = btoa(`${config.publicKey}:${config.secretKey}`)
+
+  try {
+    await fetch(`${config.baseUrl}/api/public/ingestion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    // fire-and-forget
+  }
+}
+
 export async function trackMissingPin(purpose: string): Promise<void> {
   if (!config) return
 

@@ -1,23 +1,24 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AgentConfig, CustomerContext, IntentSnapshot, NexusConfig } from './types.js'
-import { buildSystemPrompt, resolvePersonality } from './ccp.js'
-import type { ResolvedPersonalityWithVersion } from './ccp.js'
+import { buildSystemPrompt, buildSystemPromptSplit, resolvePersonality } from './ccp.js'
+import type { ResolvedPersonalityWithVersion, PromptBuild } from './ccp.js'
 import { computeIntentScore, scoreToProactivity } from './isp.js'
 import { loadAgentMemories, persistMemory } from './memory.js'
-import { trackPersistTurnFailed, getLangfuseConfig } from './langfuse.js'
+import { trackPersistTurnFailed, trackPromptCacheRejected, getLangfuseConfig } from './langfuse.js'
 import { resolveModel, resolveFallbackChain } from './model-config.js'
 import type { FallbackChainEntry } from './model-config.js'
 import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
-import { callWithFallback, FallbackChainExhaustedError, FallbackTimeoutError } from './fallback.js'
+import { FallbackChainExhaustedError, FallbackTimeoutError } from './fallback.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
 import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
 import { sanitizeInput } from './input-sanitizer.js'
 import { buildDegradedResponse, formatDegradedForCustomer } from './degradation.js'
 import type { DegradationReason } from './degradation.js'
-import { injectCanary, validateOutput } from './output-validator.js'
+import { buildCanary, injectCanary, validateOutput } from './output-validator.js'
 import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
+import { loadPromptCacheConfig, applyCacheToRequest, callWithCacheFallback } from './prompt-cache.js'
 import { loadToolStatusMessages, buildStatusEvent } from './tool-status.js'
 import type { OnStatusEvent } from './tool-status.js'
 import { extractMemories } from './memory-extraction.js'
@@ -86,9 +87,10 @@ export async function reasoningLoop(
   }
 
   const context = await loadContext(session, supabase)
-  const { personality, intent, memories, promptVersion } = await computeIntelligence(context, session, supabase)
+  const { personality, intent, memories, promptVersion, promptBuild } = await computeIntelligence(context, session, supabase)
   const systemPromptWithCanary = injectCanary(personality.systemPrompt, session.id)
   const tools = await getAvailableTools(context, supabase)
+  const cacheConfig = await loadPromptCacheConfig(supabase)
 
   const existingSummary = await loadLatestSummary(session.id, supabase)
   const historyWithSummary = buildHistoryWithSummary(existingSummary, session.conversationHistory)
@@ -102,7 +104,14 @@ export async function reasoningLoop(
   )
   const sessionForRequest = { ...sessionWithSummary, conversationHistory: hardLimitHistory }
 
-  const nexusRequest = await buildNexusRequest(sessionForRequest, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
+  const canaryStr = buildCanary(session.id)
+  const staticPartForCache = promptBuild.staticPart
+  const dynamicPartWithCanary = `${canaryStr}\n${promptBuild.dynamicPart}`
+
+  let nexusRequest = await buildNexusRequest(sessionForRequest, signal, systemPromptWithCanary, personality.temperature, tools, supabase)
+  if (cacheConfig.enabled) {
+    nexusRequest = applyCacheToRequest(nexusRequest, staticPartForCache, dynamicPartWithCanary, true)
+  }
 
   const costCheck = await checkCostLimit(session.id, supabase, session.locale)
   if (costCheck.exceeded) {
@@ -226,7 +235,7 @@ async function computeIntelligence(
   context.intentScore = intentScore
   context.proactivityLevel = proactivityLevel
 
-  const systemPrompt = buildSystemPrompt(personality, context, memories, session.channel, session.market)
+  const promptBuild = buildSystemPromptSplit(personality, context, memories, session.channel, session.market)
 
   const intent: IntentSnapshot = {
     intentScore,
@@ -237,7 +246,7 @@ async function computeIntelligence(
     computedAt: new Date(),
   }
 
-  return { personality: { ...personality, systemPrompt }, intent, memories, promptVersion: personality.promptVersion ?? null }
+  return { personality: { ...personality, systemPrompt: promptBuild.full }, intent, memories, promptVersion: personality.promptVersion ?? null, promptBuild }
 }
 
 async function loadRecentSignals(profileId: string, supabase: SupabaseClient) {
@@ -328,8 +337,9 @@ async function processResponse(
     )
     await checkTokenBudget(sessionId, estimate)
 
-    const fbResult = await callWithFallback(currentRequest, fallbackChain, nexusConfig, 'main')
+    const { result: fbResult, cacheRejected } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
     await trackNexusCost(sessionId, 'main', fbResult, supabase)
+    if (cacheRejected) trackPromptCacheRejected(sessionId).catch(() => {})
 
     if (fbResult.stopReason !== 'tool_use' || fbResult.toolCalls.length === 0) {
       return { text: fbResult.text, toolsUsed, newMemories }
@@ -394,7 +404,7 @@ async function processResponse(
         currentRequest.toolConfig,
       )
       await checkTokenBudget(sessionId, abortEstimate)
-      const abortResult = await callWithFallback(currentRequest, fallbackChain, nexusConfig, 'main')
+      const { result: abortResult } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
       await trackNexusCost(sessionId, 'main', abortResult, supabase)
       return { text: abortResult.text, toolsUsed, newMemories }
     }
@@ -416,7 +426,7 @@ async function processResponse(
   )
   await checkTokenBudget(sessionId, finalEstimate)
 
-  const finalFbResult = await callWithFallback(currentRequest, fallbackChain, nexusConfig, 'main')
+  const { result: finalFbResult } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
   await trackNexusCost(sessionId, 'main', finalFbResult, supabase)
   return { text: finalFbResult.text, toolsUsed, newMemories }
 }
