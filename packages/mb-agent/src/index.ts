@@ -64,3 +64,6 @@ export { loadAdversarialConversations, runAdversarialTurn, runConversation, VALI
 export type { AdversarialTurn, AdversarialConversation, TurnResult, ConversationResult } from './adversarial-runner.js'
 export { trackConversationState, loadLatestState, validateStateOutput, checkDoubleNegativeEscalation, buildStateTrackingLayer, buildEscalationHint } from './state-tracking.js'
 export type { ConversationState, Sentiment, Resolution, StateTrackingResult } from './state-tracking.js'
+export { deterministicHash, assignVariant, resolveExperimentPromptVersion, loadActiveExperiments, invalidateExperimentCache, startExperiment, stopExperiment, createExperiment, validateVariants } from './ab-testing.js'
+export type { Experiment, ExperimentVariant, ExperimentAssignment } from './ab-testing.js'
+export type { ResolvedPersonalityResult } from './ccp.js'

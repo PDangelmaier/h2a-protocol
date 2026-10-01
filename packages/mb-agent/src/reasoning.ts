@@ -68,6 +68,7 @@ interface ReasoningResult {
   securityEvents?: SecurityEvent[]
   degraded?: { reason: DegradationReason }
   promptVersion?: number | null
+  experimentAssignment?: { experimentId: string; variantIndex: number } | null
 }
 
 export async function reasoningLoop(
@@ -93,7 +94,7 @@ export async function reasoningLoop(
   }
 
   const context = await loadContext(session, supabase)
-  const { personality, intent, memories, promptVersion, promptBuild } = await computeIntelligence(context, session, supabase)
+  const { personality, intent, memories, promptVersion, promptBuild, experimentAssignment } = await computeIntelligence(context, session, supabase)
   const systemPromptWithCanary = injectCanary(personality.systemPrompt, session.id)
   const allTools = await getAvailableTools(context, supabase)
   const [cacheConfig, pruningConfig] = await Promise.all([
@@ -177,7 +178,7 @@ export async function reasoningLoop(
   }
 
   const turnId = crypto.randomUUID()
-  persistTurn(session, signal, response, intent, supabase, promptVersion).catch((err: unknown) => {
+  persistTurn(session, signal, response, intent, supabase, promptVersion, experimentAssignment).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[persistTurn] session=${session.id} turn=${turnId}: ${msg}`)
     trackPersistTurnFailed(session.id, turnId, msg).catch(() => {})
@@ -221,6 +222,9 @@ export async function reasoningLoop(
     newMemories: response.newMemories,
     securityEvents: [],
     promptVersion,
+    experimentAssignment: experimentAssignment
+      ? { experimentId: experimentAssignment.experimentId, variantIndex: experimentAssignment.variantIndex }
+      : null,
     ...(response.degraded ? { degraded: response.degraded } : {}),
   }
 }
@@ -250,7 +254,7 @@ async function computeIntelligence(
   supabase: SupabaseClient,
 ) {
   const [personality, signals, memories, conversationState] = await Promise.all([
-    resolvePersonality(context, supabase),
+    resolvePersonality(context, supabase, session.profileId),
     loadRecentSignals(session.profileId, supabase),
     loadAgentMemories(session.profileId, context, supabase),
     loadLatestState(session.id, supabase),
@@ -273,7 +277,8 @@ async function computeIntelligence(
     computedAt: new Date(),
   }
 
-  return { personality: { ...personality, systemPrompt: promptBuild.full }, intent, memories, promptVersion: personality.promptVersion ?? null, promptBuild, conversationState }
+  const experimentAssignment = personality.experimentAssignment ?? null
+  return { personality: { ...personality, systemPrompt: promptBuild.full }, intent, memories, promptVersion: personality.promptVersion ?? null, promptBuild, conversationState, experimentAssignment }
 }
 
 async function loadRecentSignals(profileId: string, supabase: SupabaseClient) {
@@ -477,6 +482,7 @@ async function persistTurn(
   _intent: IntentSnapshot,
   supabase: SupabaseClient,
   promptVersion?: number | null,
+  experimentAssignment?: { experimentId: string; variantIndex: number } | null,
 ): Promise<void> {
   const { data: conv } = await supabase
     .from('conversations')
@@ -505,6 +511,8 @@ async function persistTurn(
       content: { text: response.text },
       tools_used: response.toolsUsed,
       prompt_version: promptVersion ?? null,
+      experiment_id: experimentAssignment?.experimentId ?? null,
+      experiment_variant: experimentAssignment?.variantIndex ?? null,
       sequence: nextSeq + 1,
     },
   ])

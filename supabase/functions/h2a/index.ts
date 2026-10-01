@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions } from '@h2a/mb-agent'
+import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions, createExperiment, startExperiment, stopExperiment, loadActiveExperiments, invalidateExperimentCache } from '@h2a/mb-agent'
 import type { PiiHit, StatusEvent, TtftMetrics } from '@h2a/mb-agent'
 
 const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
@@ -49,6 +49,9 @@ Deno.serve(async (req) => {
     }
     if (path.startsWith('/admin/prompts')) {
       return await handleAdminPrompts(req, path)
+    }
+    if (path.startsWith('/admin/experiments')) {
+      return await handleAdminExperiments(req, path)
     }
     return jsonResponse({ error: 'Not found' }, 404)
   } catch (err) {
@@ -467,6 +470,60 @@ async function handleAdminPrompts(req: Request, path: string): Promise<Response>
 
     const rolledBack = await rollbackPromptVersion(body.personalityId, identity, supabase)
     return jsonResponse(rolledBack)
+  }
+
+  return jsonResponse({ error: 'Not found' }, 404)
+}
+
+async function handleAdminExperiments(req: Request, path: string): Promise<Response> {
+  const authResult = await verifyAdminIdentity(req)
+  if ('error' in authResult) return jsonResponse({ error: authResult.error }, authResult.status)
+  const identity = authResult.identity
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+  if (path === '/admin/experiments' && req.method === 'GET') {
+    invalidateExperimentCache()
+    const experiments = await loadActiveExperiments(supabase)
+    return jsonResponse(experiments)
+  }
+
+  if (path === '/admin/experiments/create' && req.method === 'POST') {
+    const body = await req.json()
+    if (!body.name || !body.personalityId || !body.variants) {
+      return jsonResponse({ error: 'name, personalityId, and variants required' }, 400)
+    }
+    try {
+      const experiment = await createExperiment(body.name, body.personalityId, body.variants, supabase)
+      return jsonResponse(experiment, 201)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return jsonResponse({ error: msg }, 400)
+    }
+  }
+
+  if (path === '/admin/experiments/start' && req.method === 'POST') {
+    const body = await req.json()
+    if (!body.experimentId) return jsonResponse({ error: 'experimentId required' }, 400)
+    try {
+      const experiment = await startExperiment(body.experimentId, identity, supabase)
+      return jsonResponse(experiment)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return jsonResponse({ error: msg }, 400)
+    }
+  }
+
+  if (path === '/admin/experiments/stop' && req.method === 'POST') {
+    const body = await req.json()
+    if (!body.experimentId) return jsonResponse({ error: 'experimentId required' }, 400)
+    try {
+      const experiment = await stopExperiment(body.experimentId, identity, supabase)
+      return jsonResponse(experiment)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return jsonResponse({ error: msg }, 400)
+    }
   }
 
   return jsonResponse({ error: 'Not found' }, 404)
