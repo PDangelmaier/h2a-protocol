@@ -362,22 +362,21 @@ jobs:
 
           echo "--- G3: No function in public with EXECUTE for PUBLIC, anon, or authenticated ---"
           LEAKED=$($PSQL -c "
-            SELECT p.proname, r.rolname
-            FROM pg_proc p
-            JOIN pg_namespace n ON n.oid = p.pronamespace
-            CROSS JOIN LATERAL (
-              SELECT rolname FROM pg_roles
-              WHERE rolname IN ('anon', 'authenticated')
-              UNION ALL
-              SELECT 'PUBLIC'
-            ) r(rolname)
-            WHERE n.nspname = 'public'
-              AND p.proname NOT IN (SELECT unnest(string_to_array('$ALLOWED_FUNCTIONS', ',')))
-              AND has_function_privilege(
-                CASE WHEN r.rolname = 'PUBLIC' THEN 'PUBLIC' ELSE r.rolname END,
-                p.oid,
-                'EXECUTE'
-              );
+            WITH func_grants AS (
+              SELECT p.proname,
+                     (aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner)))).grantee AS grantee_oid
+              FROM pg_proc p
+              JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public'
+                AND p.proname NOT IN (SELECT unnest(string_to_array('$ALLOWED_FUNCTIONS', ',')))
+            )
+            SELECT fg.proname,
+                   CASE WHEN fg.grantee_oid = 0 THEN 'PUBLIC' ELSE r.rolname END AS grantee
+            FROM func_grants fg
+            LEFT JOIN pg_roles r ON r.oid = fg.grantee_oid
+            WHERE fg.grantee_oid = 0
+               OR r.rolname IN ('anon', 'authenticated')
+            ORDER BY fg.proname, grantee;
           ")
 
           if [ -n "$LEAKED" ]; then
