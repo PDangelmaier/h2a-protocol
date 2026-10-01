@@ -51,7 +51,7 @@ function buildMockSupabase(tableOverrides: Record<string, { data: unknown; error
     behavioral_signals: { data: [], error: null },
     agent_memories: { data: [], error: null },
     agent_tools: { data: [], error: null },
-    model_config: { data: { model_id: 'claude-sonnet-4-6' }, error: null },
+    model_config: { data: { model_id: 'claude-sonnet-4-6', fallback_priority: 1 }, error: null },
     conversations: { data: { id: 'conv-1', turn_count: 0 }, error: null },
     conversation_turns: { data: null, error: null },
     analytics_events: { data: null, error: null },
@@ -60,8 +60,20 @@ function buildMockSupabase(tableOverrides: Record<string, { data: unknown; error
 
   const merged = { ...defaults, ...tableOverrides }
 
+  const modelConfigListResult = { data: [{ model_id: 'claude-sonnet-4-6', fallback_priority: 1 }], error: null }
+  const modelConfigSingleResult = merged.model_config
+
   return {
     from: vi.fn((table: string) => {
+      if (table === 'model_config') {
+        const chain = createChainWithArrayResult(modelConfigListResult, modelConfigSingleResult)
+        return {
+          select: (..._a: unknown[]) => chain,
+          insert: (..._a: unknown[]) => chain,
+          update: (..._a: unknown[]) => chain,
+          delete: (..._a: unknown[]) => chain,
+        }
+      }
       const result = merged[table] ?? { data: null, error: null }
       const chain = createChain(result)
       return {

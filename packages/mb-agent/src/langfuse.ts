@@ -191,6 +191,43 @@ export async function trackTokenBudgetExceeded(sessionId: string, estimate: { to
   }
 }
 
+export async function trackModelFallback(event: { purpose: string; fromModel: string; toModel: string; errorClass: string }): Promise<void> {
+  if (!config) return
+
+  const body = {
+    batch: [{
+      id: crypto.randomUUID(),
+      type: 'event-create',
+      timestamp: new Date().toISOString(),
+      body: {
+        name: 'model_fallback',
+        level: 'WARNING',
+        metadata: {
+          purpose: event.purpose,
+          from_model: event.fromModel,
+          to_model: event.toModel,
+          error_class: event.errorClass,
+        },
+      },
+    }],
+  }
+
+  const auth = btoa(`${config.publicKey}:${config.secretKey}`)
+
+  try {
+    await fetch(`${config.baseUrl}/api/public/ingestion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    // fire-and-forget
+  }
+}
+
 export async function trackMissingPin(purpose: string): Promise<void> {
   if (!config) return
 
