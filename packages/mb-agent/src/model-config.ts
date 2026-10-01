@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { trackModelSwitch, trackMissingPin } from './langfuse.js'
+import { trackModelSwitch, trackMissingPin, trackCostPriceMissing } from './langfuse.js'
 
 export type ModelPurpose = 'main' | 'tool-routing' | 'memory-extraction' | 'evaluation'
 
@@ -160,6 +160,72 @@ export async function listModelConfigs(
   const { data, error } = await query
   if (error) throw new Error(`List failed: ${error.message}`)
   return (data ?? []) as ModelConfigRow[]
+}
+
+export interface ModelPricing {
+  purpose: ModelPurpose
+  modelId: string
+  costPerInput1k: number
+  costPerOutput1k: number
+  costPerCachedInput1k: number
+}
+
+interface PricingCacheEntry {
+  pricing: ModelPricing
+  expiresAt: number
+}
+
+const pricingCache = new Map<ModelPurpose, PricingCacheEntry>()
+
+export function invalidatePricingCache(purpose?: ModelPurpose): void {
+  if (purpose) {
+    pricingCache.delete(purpose)
+  } else {
+    pricingCache.clear()
+  }
+}
+
+export async function resolveModelPricing(
+  purpose: ModelPurpose,
+  supabase: SupabaseClient,
+): Promise<ModelPricing> {
+  const cached = pricingCache.get(purpose)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.pricing
+  }
+
+  const { data, error } = await supabase
+    .from('model_config')
+    .select('model_id, cost_per_input_1k, cost_per_output_1k, cost_per_cached_input_1k')
+    .eq('purpose', purpose)
+    .eq('is_active', true)
+    .single()
+
+  if (error || !data) {
+    throw new Error(`No active model for purpose "${purpose}" — cannot resolve pricing`)
+  }
+
+  const row = data as { model_id: string; cost_per_input_1k: number | null; cost_per_output_1k: number | null; cost_per_cached_input_1k: number | null }
+
+  if (row.cost_per_input_1k == null || row.cost_per_output_1k == null || row.cost_per_cached_input_1k == null) {
+    await trackCostPriceMissing(purpose, row.model_id)
+    throw new Error(`Missing price for model "${row.model_id}" (purpose "${purpose}") — run migration 024`)
+  }
+
+  const pricing: ModelPricing = {
+    purpose,
+    modelId: row.model_id,
+    costPerInput1k: Number(row.cost_per_input_1k),
+    costPerOutput1k: Number(row.cost_per_output_1k),
+    costPerCachedInput1k: Number(row.cost_per_cached_input_1k),
+  }
+
+  pricingCache.set(purpose, {
+    pricing,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  })
+
+  return pricing
 }
 
 export async function rollbackModel(
