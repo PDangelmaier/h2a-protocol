@@ -74,8 +74,6 @@ export interface ToolResult {
 export interface NexusConfig {
   endpoint: string
   bearerToken: string
-  defaultModel: string
-  fallbackModel: string
 }
 
 export interface AgentConfig {
