@@ -8,7 +8,7 @@ if [[ ! -d "$MIGRATION_DIR" ]]; then
   exit 0
 fi
 
-STAGED_MIGRATIONS=$(git diff --cached --name-only -- "$MIGRATION_DIR/" | grep -E '^supabase/migrations/[0-9]+' || true)
+STAGED_MIGRATIONS=$(git diff --cached --diff-filter=A --name-only -- "$MIGRATION_DIR/" | grep -E '^supabase/migrations/[0-9]+' || true)
 
 if [[ -z "$STAGED_MIGRATIONS" ]]; then
   exit 0
