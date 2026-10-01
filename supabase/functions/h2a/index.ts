@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop, filterPii } from '@h2a/mb-agent'
-import type { PiiHit, StatusEvent } from '@h2a/mb-agent'
+import { reasoningLoop, filterPii, trackTtft, resolveModel } from '@h2a/mb-agent'
+import type { PiiHit, StatusEvent, TtftMetrics } from '@h2a/mb-agent'
 
 const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
 const OPTIONAL_VARS = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL'] as const
@@ -209,7 +209,10 @@ async function handleStream(req: Request): Promise<Response> {
     timestamp: new Date(),
   }
 
+  const requestStart = Date.now()
   const encoder = new TextEncoder()
+  let firstFrameSent = false
+  let ttftMs = 0
 
   function sendSseEvent(controller: ReadableStreamDefaultController, event: Record<string, unknown>): void {
     const filtered = filterSseEvent(event)
@@ -218,7 +221,14 @@ async function handleStream(req: Request): Promise<Response> {
       const piiEvent = { type: 'pii_masked', hits: filtered.piiHits }
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(piiEvent)}\n\n`))
     }
+    if (!firstFrameSent && (event.type === 'agent.frame' || event.type === 'status')) {
+      ttftMs = Date.now() - requestStart
+      firstFrameSent = true
+    }
   }
+
+  const supabaseForTtft = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  const modelId = await resolveModel('main', supabaseForTtft).catch(() => 'unknown')
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -249,6 +259,16 @@ async function handleStream(req: Request): Promise<Response> {
 
         sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
         sendSseEvent(controller, { type: 'presence.update', state: 'attentive' })
+
+        const totalMs = Date.now() - requestStart
+        const ttftMetrics: TtftMetrics = {
+          ttftMs: ttftMs || totalMs,
+          totalMs,
+          sessionId: session.id,
+          model: modelId,
+          toolRounds: result.toolsUsed.length,
+        }
+        trackTtft(ttftMetrics, supabaseForTtft).catch(() => {})
       } catch (err) {
         sendSseEvent(controller, { type: 'agent.frame', frameType: 'error', content: { message: 'An unexpected error occurred' } })
         sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
