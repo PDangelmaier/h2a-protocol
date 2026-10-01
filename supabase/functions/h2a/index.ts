@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { reasoningLoop } from '@h2a/mb-agent'
+import { thisDoesNotExist_SPEC036_M4_negative } from '@h2a/mb-agent'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
