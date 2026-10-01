@@ -19,6 +19,8 @@ interface ToolDefinition {
   minPidScore: number
   requiresConsent: string[]
   allowedChannels: string[]
+  allowedJourneyPhases: string[]
+  topics: string[]
   timeoutSeconds: number
   riskLevel: string
 }
@@ -40,10 +42,7 @@ export async function getAvailableTools(
 
   if (!data) return []
 
-  return data.filter(tool => {
-    const channels: string[] = tool.allowed_channels ?? []
-    return channels.length === 0 || channels.includes('*')
-  }).map(mapToolRow)
+  return data.map(mapToolRow)
 }
 
 function mapToolRow(row: Record<string, unknown>): ToolDefinition {
@@ -58,6 +57,8 @@ function mapToolRow(row: Record<string, unknown>): ToolDefinition {
     minPidScore: row.min_pid_score as number,
     requiresConsent: (row.requires_consent as string[]) ?? [],
     allowedChannels: (row.allowed_channels as string[]) ?? [],
+    allowedJourneyPhases: (row.allowed_journey_phases as string[]) ?? [],
+    topics: (row.topics as string[]) ?? [],
     timeoutSeconds: (row.timeout_seconds as number) ?? 5,
     riskLevel: (row.risk_level as string) ?? 'normal',
   }

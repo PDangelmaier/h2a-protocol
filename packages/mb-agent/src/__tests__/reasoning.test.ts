@@ -85,6 +85,17 @@ vi.mock('../prompt-cache.js', () => ({
   }),
 }))
 
+vi.mock('../tool-pruning.js', () => ({
+  loadPruningConfig: vi.fn().mockResolvedValue({ maxTools: 8 }),
+  pruneTools: vi.fn().mockImplementation((tools: unknown[]) => tools),
+}))
+
+vi.mock('../tool-errors.js', () => ({
+  buildToolError: vi.fn().mockReturnValue({ error: true, data: { _h2a_tool_error: true, errorType: 'not_offered', toolName: 'unknown', durationMs: 0, suggestedAction: 'Use offered tools.' } }),
+  classifyToolError: vi.fn().mockReturnValue('upstream_error'),
+  sanitizeErrorForModel: vi.fn().mockImplementation((e: unknown) => String(e)),
+}))
+
 const mockExecuteTool = vi.fn()
 vi.mock('../tools.js', () => ({
   getAvailableTools: vi.fn().mockResolvedValue([]),
