@@ -180,8 +180,10 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
     )
     expect(toolResultMsg).toBeDefined()
     const toolResult = toolResultMsg.content.find((c: Record<string, unknown>) => 'toolResult' in c)
-    expect(toolResult.toolResult.content[0].json).toHaveProperty('message')
-    expect(JSON.stringify(toolResult.toolResult.content[0].json.message)).toContain('Einwilligung')
+    const payload = toolResult.toolResult.content[0].json
+    expect(payload).toHaveProperty('_h2a_tool_data', true)
+    expect(payload.data).toHaveProperty('message')
+    expect(JSON.stringify(payload.data.message)).toContain('Einwilligung')
 
     vi.unstubAllGlobals()
   })
@@ -245,7 +247,9 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
     )
     expect(toolResultMsg).toBeDefined()
     const toolResult = toolResultMsg.content.find((c: Record<string, unknown>) => 'toolResult' in c)
-    expect(toolResult.toolResult.content[0].json).toHaveProperty('status', 'dispatched')
+    const payload2 = toolResult.toolResult.content[0].json
+    expect(payload2).toHaveProperty('_h2a_tool_data', true)
+    expect(payload2.data).toHaveProperty('status', 'dispatched')
 
     vi.unstubAllGlobals()
   })
