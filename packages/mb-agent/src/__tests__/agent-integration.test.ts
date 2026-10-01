@@ -4,6 +4,10 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
 }))
 
+vi.mock('../memory-extraction.js', () => ({
+  extractMemories: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('../cost-gate.js', () => ({
   trackNexusCost: vi.fn().mockResolvedValue({ costUsd: 0.001, totalCostUsd: 0.01, callCount: 1 }),
   checkCostLimit: vi.fn().mockResolvedValue({ exceeded: false, totalCostUsd: 0.01, limitEur: 0.50 }),
