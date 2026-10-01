@@ -36,11 +36,11 @@ describe('resolveModel', () => {
 
   it('returns the active model_id for a purpose', async () => {
     const supabase = mockSupabase({
-      model_config: { model_id: 'claude-sonnet-5' },
+      model_config: { model_id: 'claude-sonnet-4-6' },
     })
 
     const result = await resolveModel('main', supabase)
-    expect(result).toBe('claude-sonnet-5')
+    expect(result).toBe('claude-sonnet-4-6')
   })
 
   it('throws when no active model exists', async () => {
@@ -50,7 +50,7 @@ describe('resolveModel', () => {
 
   it('caches the result for subsequent calls', async () => {
     const supabase = mockSupabase({
-      model_config: { model_id: 'claude-sonnet-5' },
+      model_config: { model_id: 'claude-sonnet-4-6' },
     })
 
     await resolveModel('main', supabase)
@@ -62,7 +62,7 @@ describe('resolveModel', () => {
 
   it('invalidates cache per purpose', async () => {
     const supabase = mockSupabase({
-      model_config: { model_id: 'claude-sonnet-5' },
+      model_config: { model_id: 'claude-sonnet-4-6' },
     })
 
     await resolveModel('main', supabase)
@@ -120,7 +120,7 @@ describe('AC-2: DB unique constraint — one active model per purpose', () => {
       singleCallCount++
       if (singleCallCount === 1) {
         return Promise.resolve({
-          data: { id: 'new-id', purpose: 'main', model_id: 'claude-sonnet-5', is_active: false },
+          data: { id: 'new-id', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: false },
           error: null,
         })
       }
@@ -131,7 +131,7 @@ describe('AC-2: DB unique constraint — one active model per purpose', () => {
         })
       }
       return Promise.resolve({
-        data: { id: 'new-id', purpose: 'main', model_id: 'claude-sonnet-5', is_active: true, activated_by: 'admin' },
+        data: { id: 'new-id', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: true, activated_by: 'admin' },
         error: null,
       })
     })
@@ -177,7 +177,7 @@ describe('AC-5: Rollback restores previous model, cache invalidated', () => {
   it('rollback reactivates the previously active model', async () => {
     const chain: Record<string, unknown> = {}
     const rows = [
-      { id: 'current-id', purpose: 'main', model_id: 'claude-sonnet-5', is_active: true, activated_at: '2026-09-29T06:00:00Z' },
+      { id: 'current-id', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: true, activated_at: '2026-09-29T06:00:00Z' },
       { id: 'previous-id', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: false, activated_at: '2026-09-28T06:00:00Z' },
     ]
 
@@ -197,7 +197,7 @@ describe('AC-5: Rollback restores previous model, cache invalidated', () => {
         data: {
           id: 'previous-id', purpose: 'main', model_id: 'claude-sonnet-4-6',
           is_active: true, activated_by: 'rollback-admin',
-          override_reason: 'Rollback from claude-sonnet-5',
+          override_reason: 'Rollback from claude-sonnet-4-6',
         },
         error: null,
       }),
@@ -212,7 +212,7 @@ describe('AC-5: Rollback restores previous model, cache invalidated', () => {
   })
 
   it('rollback invalidates cache so next resolve hits DB', async () => {
-    const supabase1 = mockSupabase({ model_config: { model_id: 'claude-sonnet-5' } })
+    const supabase1 = mockSupabase({ model_config: { model_id: 'claude-sonnet-4-6' } })
     await resolveModel('main', supabase1)
 
     invalidateModelCache('main')
@@ -247,7 +247,7 @@ describe('AC-6: Langfuse event on model switch', () => {
       singleCallCount++
       if (singleCallCount === 1) {
         return Promise.resolve({
-          data: { id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-5', is_active: false },
+          data: { id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: false },
           error: null,
         })
       }
@@ -259,7 +259,7 @@ describe('AC-6: Langfuse event on model switch', () => {
       }
       return Promise.resolve({
         data: {
-          id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-5',
+          id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-4-6',
           is_active: true, activated_by: 'admin', eval_score: 0.92,
         },
         error: null,
@@ -272,7 +272,7 @@ describe('AC-6: Langfuse event on model switch', () => {
     expect(mockTrack).toHaveBeenCalledWith({
       purpose: 'main',
       previousModelId: 'claude-sonnet-4-6',
-      newModelId: 'claude-sonnet-5',
+      newModelId: 'claude-sonnet-4-6',
       activatedBy: 'admin',
       evalScore: 0.92,
       overrideReason: null,

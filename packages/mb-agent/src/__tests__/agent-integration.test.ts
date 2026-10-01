@@ -78,7 +78,7 @@ function buildMockSupabase(tableOverrides: Record<string, { data: unknown; error
 const mockConfig: AgentConfig = {
   supabaseUrl: 'http://localhost:54321',
   supabaseServiceKey: 'test-service-key',
-  nexus: { endpoint: 'http://nexus-test', bearerToken: 'test-token', defaultModel: 'claude-sonnet-4-6', fallbackModel: 'claude-haiku-4-5' },
+  nexus: { endpoint: 'http://nexus-test', bearerToken: 'test-token' },
   market: 'de',
   defaultLocale: 'de-DE',
 }

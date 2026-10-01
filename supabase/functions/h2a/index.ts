@@ -198,8 +198,6 @@ async function handleStream(req: Request): Promise<Response> {
     nexus: {
       endpoint: NEXUS_ENDPOINT,
       bearerToken: NEXUS_TOKEN,
-      defaultModel: 'claude-sonnet-4-6',
-      fallbackModel: 'claude-haiku-4-5',
     },
     market: profile?.market ?? 'de',
     defaultLocale: profile?.locale ?? 'de-AT',

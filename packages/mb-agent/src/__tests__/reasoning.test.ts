@@ -97,7 +97,7 @@ const signal = { type: 'message', content: 'Welche EQS Varianten gibt es?', time
 const config = {
   supabaseUrl: 'http://localhost:54321',
   supabaseServiceKey: 'test-key',
-  nexus: { endpoint: 'http://nexus', bearerToken: 'tok', defaultModel: 'claude-sonnet-4-6', fallbackModel: 'claude-haiku-4-5' },
+  nexus: { endpoint: 'http://nexus', bearerToken: 'tok' },
   market: 'DE',
   defaultLocale: 'de-DE',
 }
