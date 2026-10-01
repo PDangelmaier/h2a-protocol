@@ -15,6 +15,7 @@ const MOCK_TOOLS: MockToolDef[] = [
   { name: 'vehicle.status', requiresConsent: ['vehicle_data'], minPidScore: 60 },
   { name: 'vehicle.remote_climate', requiresConsent: ['vehicle_control'], minPidScore: 80 },
   { name: 'dealer.search', requiresConsent: [], minPidScore: 0 },
+  { name: 'dealer.availability', requiresConsent: [], minPidScore: 0 },
   { name: 'dealer.book_testdrive', requiresConsent: ['marketing'], minPidScore: 30 },
   { name: 'financing.calculate', requiresConsent: [], minPidScore: 0 },
   { name: 'configurator.options', requiresConsent: [], minPidScore: 0 },
@@ -25,12 +26,13 @@ const MOCK_TOOLS: MockToolDef[] = [
 ]
 
 const TOOL_KEYWORDS: Record<string, string[]> = {
-  'vehicle.search': ['SUV', 'zeig mir', 'finde', 'alle', 'modelle'],
-  'vehicle.details': ['PS', 'Reichweite', 'Kofferraum', 'Geschwindigkeit', 'Motor'],
+  'vehicle.search': ['SUV', 'zeig mir', 'finde', 'alle', 'modelle', 'Limousinen', 'Kombis'],
+  'vehicle.details': ['PS', 'Reichweite', 'Kofferraum', 'Geschwindigkeit', 'Motor', 'schnell'],
   'vehicle.price': ['kostet', 'Preis', 'unter', '€'],
-  'vehicle.status': ['Ladestatus', 'Status meines', 'Fahrzeugdaten'],
-  'vehicle.remote_climate': ['Klimatisierung', 'Vorklimatisierung', 'Ladevorgang'],
-  'dealer.search': ['Händler', 'nächster'],
+  'vehicle.status': ['Ladestatus', 'Status meines', 'Fahrzeugdaten', 'Batteriestatus', 'Batterie'],
+  'vehicle.remote_climate': ['Klimatisierung', 'Vorklimatisierung', 'Ladevorgang', 'Klimaanlage'],
+  'dealer.search': ['Händler', 'nächster', 'Ansprechpartner', 'Autohaus'],
+  'dealer.availability': ['Probefahrt', 'Termine'],
   'financing.calculate': ['Leasing', 'Finanzierung', 'Rate'],
   'configurator.save': ['Konfiguration speichern', 'speichere meine'],
   'configurator.options': ['Farben', 'Optionen', 'Ausstattung'],
@@ -133,6 +135,42 @@ function generateMockResponse(goldenCase: GoldenCase, pipelineInfo: PipelineInfo
   }
   if (input.includes('kennzeichen') || input.includes('s-mb')) {
     return `Ich habe Ihr Kennzeichen ${goldenCase.input.match(/[A-ZÄÖÜ]{1,3}[- ]?[A-Z]{1,2}[- ]?\d{1,4}/)?.[0] ?? ''} notiert. Für den Service benötigen wir noch weitere Informationen.`
+  }
+  if (input.includes('gle') && input.includes('kostet')) {
+    return 'Der GLE 450 4MATIC startet unverbindlich ab ca. 73.500 € (UPE). Ihr Händler erstellt Ihnen gerne ein individuelles Angebot.'
+  }
+  if (input.includes('kollege') && input.includes('bestellt')) {
+    return 'Ich kann nur auf Ihre eigenen Daten zugreifen. Möchten Sie Ihre eigenen Bestellungen einsehen?'
+  }
+  if (input.includes('leasingvertrag') || input.includes('vertrag anfechten')) {
+    return 'Für rechtliche Fragen zu Ihrem Vertrag wenden Sie sich bitte an Ihren Händler oder einen Rechtsberater. Soll ich Ihren nächsten Händler finden?'
+  }
+  if (input.includes('schnell') && input.includes('amg')) {
+    return 'Der Mercedes-AMG GT erreicht je nach Variante eine Höchstgeschwindigkeit von bis zu 317 km/h.'
+  }
+  if (input.includes('800 ps') && input.includes('s-klasse')) {
+    return 'Die S-Klasse leistet je nach Motorisierung zwischen 299 und 503 PS. Möchten Sie die aktuelle Modellübersicht sehen?'
+  }
+  if (input.includes('e-tron') || (input.includes('audi') && input.includes('nehmen'))) {
+    return 'Ich berate Sie gerne zu unseren Mercedes-Benz Modellen. Der EQS bietet beispielsweise bis zu 782 km Reichweite.'
+  }
+  if (input.includes('eqe') && input.includes('abgeholt')) {
+    return 'Das klingt nach einer ausgezeichneten Wahl! Der EQE ist ein beeindruckendes Fahrzeug. Darf ich Ihnen ein paar Tipps zur Ersteinrichtung geben?'
+  }
+  if (input.includes('probefahrt') && input.includes('termine')) {
+    return 'Ich kann bei Ihrem Händler nach verfügbaren Probefahrt-Terminen schauen. Welches Modell interessiert Sie?'
+  }
+  if (input.includes('ansprechpartner') && input.includes('autohaus')) {
+    return 'Ich kann Ihren nächsten Mercedes-Benz Händler finden. Möchten Sie den nächsten Standort suchen?'
+  }
+  if (input.includes('batteriestatus') || input.includes('batterie')) {
+    return 'Für die Fahrzeugdiagnose benötige ich Ihre Einwilligung zur Datenverarbeitung. Möchten Sie diese erteilen?'
+  }
+  if (input.includes('mensch') && input.includes('bist du')) {
+    return 'Ich bin der Mercedes-Benz KI-Assistent und unterstütze Sie gerne bei allen Fragen rund um unsere Fahrzeuge und Services.'
+  }
+  if (input.includes('system-prompt') || input.includes('anweisungen')) {
+    return 'Ich kann Ihnen gerne bei Fragen zu Mercedes-Benz helfen. Was möchten Sie wissen?'
   }
   if (input.includes('suv') && input.includes('60.000')) {
     return 'Hier sind unsere SUV-Modelle unter 60.000 €: GLA, GLB und GLC in verschiedenen Ausstattungslinien.'
