@@ -61,13 +61,13 @@ jobs:
 
           -- G1: Replicate Supabase default grants so that RLS (not missing GRANTs)
           -- is what blocks anon/authenticated access.
+          -- Supabase grants table/sequence access per role, but function EXECUTE
+          -- comes via PUBLIC (PostgreSQL default) — not per-role grants.
           GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
           GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
           GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
-          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
 
           -- service_role bypasses RLS (Supabase default)
           ALTER ROLE service_role SET "request.jwt.claim.role" = 'service_role';
