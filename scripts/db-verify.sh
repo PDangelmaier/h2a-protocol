@@ -95,6 +95,67 @@ for seed in $(ls "$SEEDS_DIR"/*.sql 2>/dev/null | sort); do
 done
 
 echo ""
+echo "--- RLS Enforcement (SPEC-041) ---"
+TABLES_WITHOUT_RLS=$($PSQL -t -A -c "
+  SELECT tablename FROM pg_tables
+  WHERE schemaname = 'public'
+    AND tablename NOT LIKE 'pg_%'
+    AND tablename NOT IN (
+      SELECT tablename FROM pg_tables t
+      JOIN pg_class c ON c.relname = t.tablename
+      WHERE t.schemaname = 'public' AND c.relrowsecurity = true
+    )
+  ORDER BY tablename;
+")
+
+if [ -n "$TABLES_WITHOUT_RLS" ]; then
+  echo "  Tables without RLS:"
+  echo "$TABLES_WITHOUT_RLS" | while IFS= read -r t; do
+    [ -n "$t" ] && echo "    ✘ $t" && ((FAIL_COUNT++))
+  done
+else
+  echo "  ok   all public tables have RLS enabled"
+fi
+
+echo ""
+echo "--- Role Access Checks (SPEC-041) ---"
+CONFIG_TABLES="model_config agent_tools ccp_personalities ccp_routing_rules ccp_deployments cost_gate_config degradation_config enrichment_cache"
+for role in anon authenticated; do
+  for tbl in $CONFIG_TABLES; do
+    RESULT=$($PSQL -t -A -c "SET ROLE $role; SELECT count(*) FROM $tbl;" 2>&1 || true)
+    if echo "$RESULT" | grep -qi "permission denied"; then
+      echo "  ok   $role blocked from $tbl"
+    else
+      echo "  FAIL $role CAN access $tbl"
+      ((FAIL_COUNT++))
+    fi
+    $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+  done
+done
+
+for role in anon authenticated; do
+  RESULT=$($PSQL -t -A -c "SET ROLE $role; SELECT * FROM increment_session_cost('test', 0.01);" 2>&1 || true)
+  if echo "$RESULT" | grep -qi "permission denied"; then
+    echo "  ok   $role blocked from increment_session_cost"
+  else
+    echo "  FAIL $role CAN execute increment_session_cost"
+    ((FAIL_COUNT++))
+  fi
+  $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+done
+
+for role in anon authenticated; do
+  RESULT=$($PSQL -t -A -c "SET ROLE $role; SELECT * FROM session_cost_stats;" 2>&1 || true)
+  if echo "$RESULT" | grep -qi "permission denied"; then
+    echo "  ok   $role blocked from session_cost_stats"
+  else
+    echo "  FAIL $role CAN access session_cost_stats"
+    ((FAIL_COUNT++))
+  fi
+  $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+done
+
+echo ""
 echo "--- Summary ---"
 echo "  Passed: $PASS_COUNT"
 echo "  Failed: $FAIL_COUNT"
