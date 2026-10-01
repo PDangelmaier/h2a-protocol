@@ -25,6 +25,9 @@ jobs:
         with:
           deno-version: "2.1.4"
 
+      - name: Secret-Scan
+        run: bash scripts/secret-scan.sh ci
+
       - name: Deno type-check Edge Function
         run: deno check --frozen --no-npm --config supabase/functions/deno.json supabase/functions/h2a/index.ts
 
