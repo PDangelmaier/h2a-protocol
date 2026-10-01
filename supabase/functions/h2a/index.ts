@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions, createExperiment, startExperiment, stopExperiment, loadActiveExperiments, invalidateExperimentCache } from '@h2a/mb-agent'
+import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions, createExperiment, startExperiment, stopExperiment, loadActiveExperiments, invalidateExperimentCache, ClientDisconnectedError } from '@h2a/mb-agent'
 import type { PiiHit, StatusEvent, TtftMetrics } from '@h2a/mb-agent'
+import { SseBuffer } from '@h2a/core'
+import type { SseFrame } from '@h2a/core'
 
 const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
 const OPTIONAL_VARS = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL'] as const
@@ -220,12 +222,13 @@ async function handleStream(req: Request): Promise<Response> {
   let firstFrameSent = false
   let ttftMs = 0
 
-  function sendSseEvent(controller: ReadableStreamDefaultController, event: Record<string, unknown>): void {
+  const buffer = new SseBuffer({ maxPending: 64, signal: req.signal })
+
+  function pushEvent(event: Record<string, unknown>): void {
     const filtered = filterSseEvent(event)
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify(filtered.event)}\n\n`))
+    buffer.push({ event: String(filtered.event.type ?? ''), data: filtered.event })
     if (filtered.piiHits.length > 0) {
-      const piiEvent = { type: 'pii_masked', hits: filtered.piiHits }
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify(piiEvent)}\n\n`))
+      buffer.push({ event: 'pii_masked', data: { type: 'pii_masked', hits: filtered.piiHits } })
     }
     if (!firstFrameSent && (event.type === 'agent.frame' || event.type === 'status')) {
       ttftMs = Date.now() - requestStart
@@ -233,37 +236,49 @@ async function handleStream(req: Request): Promise<Response> {
     }
   }
 
+  function drainToController(controller: ReadableStreamDefaultController): void {
+    for (const chunk of buffer.drain()) {
+      controller.enqueue(encoder.encode(chunk))
+    }
+  }
+
   const modelId = await resolveModel('main', supabase).catch(() => 'unknown')
 
   const stream = new ReadableStream({
     async start(controller) {
-      sendSseEvent(controller, { type: 'presence.update', state: 'conversing' })
+      pushEvent({ type: 'presence.update', state: 'conversing' })
+      drainToController(controller)
 
       const onStatusEvent = (event: StatusEvent) => {
-        sendSseEvent(controller, { type: 'status', ...event })
+        pushEvent({ type: 'status', ...event })
+        drainToController(controller)
       }
 
       try {
-        const result = await reasoningLoop(sessionState, userSignal, agentConfig, onStatusEvent)
+        const result = await reasoningLoop(sessionState, userSignal, agentConfig, onStatusEvent, req.signal)
 
         if (result.securityEvents && result.securityEvents.length > 0) {
           for (const ev of result.securityEvents) {
-            sendSseEvent(controller, { type: 'security_event', eventType: ev.type })
+            pushEvent({ type: 'security_event', eventType: ev.type })
           }
         }
 
         if (result.degraded) {
-          sendSseEvent(controller, { type: 'degraded_response', reason: result.degraded.reason })
+          pushEvent({ type: 'degraded_response', reason: result.degraded.reason })
         }
 
-        sendSseEvent(controller, {
-          type: 'agent.frame',
-          frameType: 'text',
-          content: { text: result.response, streaming: false },
-        })
+        if (result.response) {
+          pushEvent({
+            type: 'agent.frame',
+            frameType: 'text',
+            content: { text: result.response, streaming: false },
+          })
+        }
 
-        sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
-        sendSseEvent(controller, { type: 'presence.update', state: 'attentive' })
+        pushEvent({ type: 'agent.frame', frameType: 'end', content: {} })
+        pushEvent({ type: 'presence.update', state: 'attentive' })
+
+        drainToController(controller)
 
         const totalMs = Date.now() - requestStart
         const ttftMetrics: TtftMetrics = {
@@ -275,9 +290,12 @@ async function handleStream(req: Request): Promise<Response> {
         }
         trackTtft(ttftMetrics, supabase).catch(() => {})
       } catch (err) {
-        sendSseEvent(controller, { type: 'agent.frame', frameType: 'error', content: { message: 'An unexpected error occurred' } })
-        sendSseEvent(controller, { type: 'agent.frame', frameType: 'end', content: {} })
-        sendSseEvent(controller, { type: 'presence.update', state: 'attentive' })
+        if (!buffer.disconnected) {
+          pushEvent({ type: 'agent.frame', frameType: 'error', content: { message: 'An unexpected error occurred' } })
+          pushEvent({ type: 'agent.frame', frameType: 'end', content: {} })
+          pushEvent({ type: 'presence.update', state: 'attentive' })
+          drainToController(controller)
+        }
       } finally {
         controller.close()
       }

@@ -10,6 +10,7 @@ export {
   type PresenceTransition,
   type PresenceListener,
 } from "./presence.js";
+export { SseBuffer, type SseFrame, type SseBufferOptions } from "./sse-buffer.js";
 export { sanitizeHtml, sanitizeFrameContent } from "./sanitize.js";
 export {
   validateMessage,
