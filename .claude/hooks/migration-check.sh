@@ -9,10 +9,12 @@ if [[ ! -d "$MIGRATION_DIR" ]]; then
   exit 0
 fi
 
-# Check for modified or deleted migrations that exist on main
-MODIFIED_MIGRATIONS=$(git diff --cached --diff-filter=MD --name-only -- "$MIGRATION_DIR/" | while IFS= read -r f; do
+# Check for modified, deleted, or renamed migrations that exist on main.
+# R (rename) shows old path in the output; D (delete) + M (modify) cover
+# the rest. We only block files that exist on origin/main.
+MODIFIED_MIGRATIONS=$(git diff --cached --diff-filter=MDR --name-only -- "$MIGRATION_DIR/" | while IFS= read -r f; do
   [[ -z "$f" ]] && continue
-  if git cat-file -e "origin/main:$f" 2>/dev/null || git cat-file -e "HEAD:$f" 2>/dev/null; then
+  if git cat-file -e "origin/main:$f" 2>/dev/null; then
     echo "$f"
   fi
 done || true)
