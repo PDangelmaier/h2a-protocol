@@ -41,7 +41,9 @@ export async function resolveModel(
     .select('model_id')
     .eq('purpose', purpose)
     .eq('is_active', true)
-    .single()
+    .order('fallback_priority', { ascending: true })
+    .limit(1)
+    .maybeSingle()
 
   if (error || !data) {
     await trackMissingPin(purpose)
@@ -139,20 +141,23 @@ export async function activateModel(
 
   const row = target as ModelConfigRow
 
-  const { data: prev } = await supabase
+  const { data: prevRows } = await supabase
     .from('model_config')
     .select('*')
     .eq('purpose', row.purpose)
     .eq('is_active', true)
-    .single()
+    .neq('id', configId)
+    .order('fallback_priority', { ascending: true })
 
-  const previous = (prev as ModelConfigRow) ?? null
+  const previous = (prevRows?.[0] as ModelConfigRow) ?? null
 
-  if (previous) {
+  if (prevRows && prevRows.length > 0) {
     await supabase
       .from('model_config')
       .update({ is_active: false })
-      .eq('id', previous.id)
+      .eq('purpose', row.purpose)
+      .eq('is_active', true)
+      .neq('id', configId)
   }
 
   const { data: activated, error: actErr } = await supabase
@@ -240,7 +245,9 @@ export async function resolveModelPricing(
     .select('model_id, cost_per_input_1k, cost_per_output_1k, cost_per_cached_input_1k')
     .eq('purpose', purpose)
     .eq('is_active', true)
-    .single()
+    .order('fallback_priority', { ascending: true })
+    .limit(1)
+    .maybeSingle()
 
   if (error || !data) {
     throw new Error(`No active model for purpose "${purpose}" — cannot resolve pricing`)

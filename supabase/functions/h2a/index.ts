@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { reasoningLoop, filterPii, trackTtft, resolveModel, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions, createExperiment, startExperiment, stopExperiment, loadActiveExperiments, invalidateExperimentCache } from '@h2a/mb-agent'
+import { reasoningLoop, filterPii, trackTtft, resolveModel, initLangfuse, buildDegradedResponse, formatDegradedForCustomer, registerPromptVersion, activatePromptVersion, rollbackPromptVersion, listPromptVersions, createExperiment, startExperiment, stopExperiment, loadActiveExperiments, invalidateExperimentCache } from '@h2a/mb-agent'
 import type { PiiHit, StatusEvent, TtftMetrics } from '@h2a/mb-agent'
 import { SseBuffer } from '@h2a/core/sse-buffer'
 
@@ -14,6 +14,12 @@ if (missing.length > 0) {
 const optionalMissing = OPTIONAL_VARS.filter(v => !Deno.env.get(v))
 if (optionalMissing.length > 0) {
   console.warn(`[h2a] Langfuse disabled — missing: ${optionalMissing.join(', ')}`)
+} else {
+  initLangfuse({
+    publicKey: Deno.env.get('LANGFUSE_PUBLIC_KEY')!,
+    secretKey: Deno.env.get('LANGFUSE_SECRET_KEY')!,
+    baseUrl: Deno.env.get('LANGFUSE_BASE_URL')!,
+  })
 }
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -189,7 +195,8 @@ async function handleStream(req: Request): Promise<Response> {
   }))
 
   const sessionState = {
-    id: session.id,
+    id: sessionId,
+    dbId: session.id,
     profileId: session.customer_id ?? '',
     channel: (session.channel ?? 'web') as 'web' | 'smart_storefront' | 'whatsapp' | 'mbux' | 'voice' | 'app' | 'dealer',
     locale: profile?.locale ?? 'de-AT',
@@ -283,14 +290,22 @@ async function handleStream(req: Request): Promise<Response> {
         const ttftMetrics: TtftMetrics = {
           ttftMs: ttftMs || totalMs,
           totalMs,
-          sessionId: session.id,
+          sessionId: sessionId,
           model: modelId,
           toolRounds: result.toolsUsed.length,
         }
         trackTtft(ttftMetrics, supabase).catch(() => {})
+
+        if (result.backgroundTasks?.length) {
+          await Promise.allSettled(result.backgroundTasks)
+        }
       } catch (err) {
+        console.error(`[h2a] stream error session=${sessionId}:`, err)
         if (!buffer.disconnected) {
-          pushEvent({ type: 'agent.frame', frameType: 'error', content: { message: 'An unexpected error occurred' } })
+          const degraded = await buildDegradedResponse('internal_error', sessionState.locale, supabase).catch(() => null)
+          const msg = degraded ? formatDegradedForCustomer(degraded) : 'Es ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.'
+          pushEvent({ type: 'degraded_response', reason: 'internal_error' })
+          pushEvent({ type: 'agent.frame', frameType: 'text', content: { text: msg, streaming: false } })
           pushEvent({ type: 'agent.frame', frameType: 'end', content: {} })
           pushEvent({ type: 'presence.update', state: 'attentive' })
           drainToController(controller)

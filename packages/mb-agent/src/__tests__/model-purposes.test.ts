@@ -27,12 +27,14 @@ function mockSupabase(activeModels: Record<string, string>) {
   })
   chain.order = vi.fn().mockReturnValue(chain)
   chain.limit = vi.fn().mockReturnValue(chain)
-  chain.single = vi.fn().mockImplementation(() => {
+  const resolveQuery = () => {
     if (lastPurpose && activeModels[lastPurpose]) {
       return Promise.resolve({ data: { model_id: activeModels[lastPurpose] }, error: null })
     }
     return Promise.resolve({ data: null, error: { message: 'no pin' } })
-  })
+  }
+  chain.single = vi.fn().mockImplementation(resolveQuery)
+  chain.maybeSingle = vi.fn().mockImplementation(resolveQuery)
 
   return chain as unknown as Parameters<typeof resolveModel>[1]
 }

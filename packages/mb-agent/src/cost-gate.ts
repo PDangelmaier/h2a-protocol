@@ -110,12 +110,15 @@ export async function checkCostLimit(
 
 export function estimateInputTokens(
   systemPrompt: string,
-  messages: Array<{ role: string; content: Array<{ text: string }> }>,
+  messages: Array<{ role: string; content: Array<Record<string, unknown>> }>,
   toolConfig?: { tools: Array<unknown> },
 ): TokenEstimate {
   const systemTokens = estimateTokens(systemPrompt)
   const historyTokens = messages.reduce(
-    (sum, m) => sum + m.content.reduce((s, c) => s + estimateTokens(c.text), 0),
+    (sum, m) => sum + m.content.reduce((s, c) => {
+      if ('text' in c && typeof c.text === 'string') return s + estimateTokens(c.text)
+      return s + estimateTokens(c)
+    }, 0),
     0,
   )
   const toolTokens = toolConfig ? estimateTokens(toolConfig) : 0
