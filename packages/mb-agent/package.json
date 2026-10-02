@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
+    "test": "vitest run src/",
+    "test:e2e": "vitest run e2e/ --reporter=verbose",
     "test:golden:live": "GOLDEN_MODE=live vitest run src/__tests__/golden-runner.test.ts",
     "dev": "tsx watch src/server.ts"
   },
