@@ -277,11 +277,12 @@ jobs:
             echo "  role: $role"
             while IFS= read -r tbl; do
               [ -z "$tbl" ] && continue
+              FIRST_COL=$($PSQL -c "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$tbl' ORDER BY ordinal_position LIMIT 1;")
               for op in SELECT INSERT UPDATE DELETE; do
                 case $op in
                   SELECT) STMT="SELECT count(*) FROM $tbl";;
                   INSERT) STMT="INSERT INTO $tbl DEFAULT VALUES";;
-                  UPDATE) STMT="UPDATE $tbl SET ctid = ctid";;
+                  UPDATE) STMT="UPDATE $tbl SET $FIRST_COL = $FIRST_COL";;
                   DELETE) STMT="DELETE FROM $tbl";;
                 esac
                 RESULT=$($PSQL -c "BEGIN; SET LOCAL ROLE $role; $STMT; ROLLBACK;" 2>&1 || true)
