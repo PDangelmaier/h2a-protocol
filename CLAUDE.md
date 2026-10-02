@@ -68,3 +68,9 @@ Live-Test: `pnpm test:live` (erfordert Doppler-CLI + `h2a/dev` Config)
 - `ac-check` (pre-push): Anzahl und IDs der AC in Spec und `journal/SPEC-NNN.md` müssen übereinstimmen; jedes AC hat einen Testnamen.
 - `migration-check` (pre-commit): neue Migrationsnummer > höchste existierende.
 - `secret-scan` (pre-commit): prüft Staged Files auf bekannte Secret-Patterns.
+
+### Datenbank-Sicherheit (SPEC-044)
+- Jede neue Tabelle **muss** eine RLS-Policy mit `FOR ALL TO service_role USING (true) WITH CHECK (true)` haben. Policies ohne `TO service_role` sind verboten (anon/authenticated hätten Zugriff).
+- Jede neue Funktion **muss** `REVOKE EXECUTE ... FROM anon, authenticated;` enthalten. Die CI-Stubs replizieren Supabase-Default-Grants inklusive Funktionen.
+- Verboten: `USING (current_setting('request.jwt.claim.role') = 'service_role')` — service_role hat BYPASSRLS, die Policy feuert nie.
+- CI (`db-verify.yml`) prüft generisch alle Tabellen/Funktionen gegen anon/authenticated. Fehlschlag = PR blockiert.

@@ -13,21 +13,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check for supabase changes
-        id: changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -q '^supabase/'; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No supabase/ changes — skipping db-verify."
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Start PostgreSQL
-        if: steps.changes.outputs.has_changes == 'true'
         run: |
           docker run -d --name pg-verify \
             -e POSTGRES_DB=h2a_verify \
@@ -42,7 +28,7 @@ jobs:
           until docker inspect --format='{{.State.Health.Status}}' pg-verify | grep -q healthy; do sleep 2; done
 
       - name: Setup Supabase stubs
-        if: steps.changes.outputs.has_changes == 'true'
+
         run: |
           PGPASSWORD=verify_pass psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 <<'SQL'
           CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -59,15 +45,15 @@ jobs:
             END IF;
           END $$;
 
-          -- G1: Replicate Supabase default grants so that RLS (not missing GRANTs)
-          -- is what blocks anon/authenticated access.
-          -- Supabase grants table/sequence access per role, but function EXECUTE
-          -- comes via PUBLIC (PostgreSQL default) — not per-role grants.
+          -- AC-3: Replicate Supabase default grants (tables, sequences AND
+          -- functions) so that RLS — not missing GRANTs — is what blocks access.
           GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
           GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
           GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
 
           -- service_role bypasses RLS (Supabase default)
           ALTER ROLE service_role SET "request.jwt.claim.role" = 'service_role';
@@ -79,7 +65,7 @@ jobs:
           SQL
 
       - name: Run migrations
-        if: steps.changes.outputs.has_changes == 'true'
+
         run: |
           FAIL=0
           for migration in $(ls supabase/migrations/*.sql | sort); do
@@ -98,7 +84,7 @@ jobs:
           fi
 
       - name: Run seeds
-        if: steps.changes.outputs.has_changes == 'true'
+
         run: |
           FAIL=0
           for seed in $(ls supabase/seed/*.sql 2>/dev/null | sort); do
@@ -118,7 +104,7 @@ jobs:
           echo "ALL PASSED"
 
       - name: Verify consent canon (SPEC-031)
-        if: steps.changes.outputs.has_changes == 'true'
+
         env:
           PGPASSWORD: verify_pass
         run: |
@@ -158,7 +144,7 @@ jobs:
           echo "CONSENT CANON PASSED"
 
       - name: Verify consent ordering (SPEC-035)
-        if: steps.changes.outputs.has_changes == 'true'
+
         env:
           PGPASSWORD: verify_pass
         run: |
@@ -241,7 +227,7 @@ jobs:
           echo "CONSENT ORDERING PASSED"
 
       - name: Verify RLS on all public tables (SPEC-041)
-        if: steps.changes.outputs.has_changes == 'true'
+
         env:
           PGPASSWORD: verify_pass
         run: |
@@ -272,35 +258,78 @@ jobs:
           echo "  ok   all public tables have RLS enabled"
           echo "RLS ENFORCEMENT PASSED"
 
-      - name: Verify RLS denies anon and authenticated (SPEC-041)
-        if: steps.changes.outputs.has_changes == 'true'
+      - name: Generic role test — all tables, all operations (SPEC-044 AC-2)
         env:
           PGPASSWORD: verify_pass
         run: |
           PSQL="psql -h localhost -U postgres -d h2a_verify -v ON_ERROR_STOP=1 -t -A"
           FAIL=0
-          CONFIG_TABLES="model_config agent_tools ccp_personalities ccp_routing_rules ccp_deployments cost_gate_config degradation_config enrichment_cache"
+          # Tables where anon/authenticated may have policies (currently none)
+          ALLOWED_POLICY_TABLES=""
 
-          echo "--- G1: RLS blocks SELECT (returns 0 rows, not permission denied) ---"
+          echo "--- AC-2: Every public table denies anon/authenticated for SELECT, INSERT, UPDATE, DELETE ---"
+          ALL_TABLES=$($PSQL -c "
+            SELECT tablename FROM pg_tables
+            WHERE schemaname = 'public' AND tablename NOT LIKE 'pg_%'
+            ORDER BY tablename;
+          ")
           for role in anon authenticated; do
             echo "  role: $role"
-            for tbl in $CONFIG_TABLES; do
-              ROW_COUNT=$($PSQL -c "SET ROLE $role; SELECT count(*) FROM $tbl;" 2>&1 || true)
-              $PSQL -c "RESET ROLE;" >/dev/null 2>&1
-              if echo "$ROW_COUNT" | grep -qE "^0$"; then
-                echo "    ok   $tbl → 0 rows"
-              elif echo "$ROW_COUNT" | grep -qi "permission denied"; then
-                echo "    ok   $tbl → permission denied"
-              else
-                echo "    FAIL $tbl → $ROW_COUNT"
-                FAIL=$((FAIL + 1))
-              fi
-            done
+            while IFS= read -r tbl; do
+              [ -z "$tbl" ] && continue
+              for op in SELECT INSERT UPDATE DELETE; do
+                case $op in
+                  SELECT) STMT="SELECT count(*) FROM $tbl";;
+                  INSERT) STMT="INSERT INTO $tbl DEFAULT VALUES";;
+                  UPDATE) STMT="UPDATE $tbl SET ctid = ctid";;
+                  DELETE) STMT="DELETE FROM $tbl";;
+                esac
+                RESULT=$($PSQL -c "BEGIN; SET LOCAL ROLE $role; $STMT; ROLLBACK;" 2>&1 || true)
+                $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+                if echo "$RESULT" | grep -qiE "permission denied|violates row-level|new row violates"; then
+                  : # blocked by RLS or grant → ok
+                elif [ "$op" = "SELECT" ] && echo "$RESULT" | grep -qE "^0$"; then
+                  : # 0 rows → RLS filtered → ok
+                elif echo "$RESULT" | grep -qiE "not-null|null value|violates check|generated always|cannot insert|column .* does not exist"; then
+                  : # schema constraint before data → RLS allowed it but row failed → FAIL
+                  echo "    FAIL $tbl $op → schema error (RLS did not block): $RESULT"
+                  FAIL=$((FAIL + 1))
+                elif [ "$op" != "SELECT" ] && echo "$RESULT" | grep -qE "^(INSERT|UPDATE|DELETE) 0$"; then
+                  : # 0 rows affected → ok (RLS filtered)
+                else
+                  echo "    FAIL $tbl $op → $RESULT"
+                  FAIL=$((FAIL + 1))
+                fi
+              done
+              echo "    ok   $tbl"
+            done <<< "$ALL_TABLES"
           done
 
           echo ""
-          echo "--- G1 negative test: service_role bypasses RLS ---"
-          $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          echo "--- AC-2: No policy grants access to PUBLIC, anon, or authenticated ---"
+          BAD_POLICIES=$($PSQL -c "
+            SELECT schemaname || '.' || tablename || ' → ' || policyname || ' (roles: ' || COALESCE(array_to_string(roles, ','), 'PUBLIC') || ')'
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND (roles = '{}'
+                   OR roles @> ARRAY['anon']::name[]
+                   OR roles @> ARRAY['authenticated']::name[]
+                   OR 'public' = ANY(SELECT unnest(roles)))
+              AND tablename NOT IN (SELECT unnest(string_to_array('$ALLOWED_POLICY_TABLES', ',')))
+            ORDER BY tablename, policyname;
+          ")
+          if [ -n "$BAD_POLICIES" ]; then
+            echo "FAIL: Policies granting access to anon/authenticated/PUBLIC:"
+            echo "$BAD_POLICIES" | while IFS= read -r p; do
+              [ -n "$p" ] && echo "  ✘ $p"
+            done
+            FAIL=$((FAIL + 1))
+          else
+            echo "  ok   no policy for anon/authenticated/PUBLIC"
+          fi
+
+          echo ""
+          echo "--- Negative test: service_role bypasses RLS ---"
           SVC_COUNT=$($PSQL -c "SET LOCAL ROLE service_role; SELECT count(*) FROM model_config;" 2>&1 | grep -E '^[0-9]+$' | head -1 || true)
           $PSQL -c "RESET ROLE;" >/dev/null 2>&1
           if [ -n "$SVC_COUNT" ] && [ "$SVC_COUNT" -gt 0 ] 2>/dev/null; then
@@ -311,21 +340,7 @@ jobs:
           fi
 
           echo ""
-          echo "--- G2: Functions not executable by anon/authenticated ---"
-          for role in anon authenticated; do
-            RESULT=$($PSQL -c "SET ROLE $role; SELECT * FROM increment_session_cost('test', 0.01);" 2>&1 || true)
-            $PSQL -c "RESET ROLE;" >/dev/null 2>&1
-            if echo "$RESULT" | grep -qi "permission denied"; then
-              echo "  ok   $role cannot execute increment_session_cost"
-            else
-              echo "  FAIL $role CAN execute increment_session_cost: $RESULT"
-              FAIL=$((FAIL + 1))
-            fi
-          done
-
-          echo ""
-          echo "--- G2: p_cost_delta < 0 rejected ---"
-          $PSQL -c "RESET ROLE;" >/dev/null 2>&1
+          echo "--- Function EXECUTE: p_cost_delta < 0 rejected ---"
           NEG_RESULT=$($PSQL -c "SET ROLE service_role; SELECT * FROM increment_session_cost('nonexistent', -1.0);" 2>&1 || true)
           $PSQL -c "RESET ROLE;" >/dev/null 2>&1
           if echo "$NEG_RESULT" | grep -qi "must be >= 0"; then
@@ -336,7 +351,7 @@ jobs:
           fi
 
           echo ""
-          echo "--- Testing view: session_cost_stats ---"
+          echo "--- View: session_cost_stats ---"
           for role in anon authenticated; do
             RESULT=$($PSQL -c "SET ROLE $role; SELECT * FROM session_cost_stats;" 2>&1 || true)
             $PSQL -c "RESET ROLE;" >/dev/null 2>&1
@@ -352,7 +367,7 @@ jobs:
           echo "ROLE CHECKS PASSED"
 
       - name: Verify no function EXECUTE for public/anon/authenticated (G3)
-        if: steps.changes.outputs.has_changes == 'true'
+
         env:
           PGPASSWORD: verify_pass
         run: |
@@ -401,9 +416,9 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           FAIL=0
-          echo "--- Migration immutability: no changes to migrations already on main ---"
+          echo "--- Migration immutability: no modify, delete, or rename of migrations on main ---"
 
-          CHANGED_MIGRATIONS=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- supabase/migrations/ | while IFS= read -r f; do
+          CHANGED_MIGRATIONS=$(git diff --diff-filter=MDR --name-only "$BASE_SHA" "$HEAD_SHA" -- supabase/migrations/ | while IFS= read -r f; do
             [ -z "$f" ] && continue
             if git cat-file -e "$BASE_SHA:$f" 2>/dev/null; then
               echo "$f"
