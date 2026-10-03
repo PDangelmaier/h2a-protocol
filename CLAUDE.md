@@ -53,8 +53,8 @@ Zeitstempel ausschließlich: `TZ=Europe/Berlin date -Iseconds`.
 ### Secrets / Doppler (SPEC-037)
 
 Benötigte Doppler-Keys für `h2a/dev`:
-- `NEXUS_PRD_KEY` — Nexus API Key
-- `NEXUS_ENDPOINT` — Nexus Gateway URL
+- `NEXUS_KEY` — Nexus API Key (neutral; test-live.sh maps from NEXUS_TEST_KEY)
+- `NEXUS_ENDPOINT` — Nexus Gateway URL (neutral; test-live.sh maps from NEXUS_TEST_ENDPOINT)
 - `SUPABASE_URL` — Supabase Project URL
 - `SUPABASE_SERVICE_ROLE_KEY` — Supabase Service Role
 - `LANGFUSE_PUBLIC_KEY` — (optional) Langfuse

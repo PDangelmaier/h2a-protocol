@@ -11,15 +11,15 @@ describe('SPEC-037: Secrets Hardening', () => {
 
     it('old token name does not appear in production code', () => {
       const result = execSync(
-        `grep -rn "${OLD_TOKEN_NAME}" --include="*.ts" --include="*.js" --include="*.yml" --include="*.json" ${REPO_ROOT} 2>/dev/null | grep -v node_modules | grep -v '.git/' | grep -v 'secrets-hardening.test' || true`,
+        `grep -rn "${OLD_TOKEN_NAME}" --include="*.ts" --include="*.js" --include="*.yml" --include="*.json" ${REPO_ROOT} 2>/dev/null | grep -v node_modules | grep -v '.git/' | grep -v '.claude/worktrees/' | grep -v 'secrets-hardening.test' || true`,
         { encoding: 'utf-8' },
       )
       expect(result.trim()).toBe('')
     })
 
-    it('Edge Function reads NEXUS_PRD_KEY', () => {
+    it('Edge Function reads NEXUS_KEY', () => {
       const content = readFileSync(resolve(REPO_ROOT, 'supabase/functions/h2a/index.ts'), 'utf-8')
-      expect(content).toContain("NEXUS_PRD_KEY")
+      expect(content).toContain("NEXUS_KEY")
       expect(content).not.toContain(OLD_TOKEN_NAME)
     })
   })
@@ -30,7 +30,7 @@ describe('SPEC-037: Secrets Hardening', () => {
       expect(content).toContain('SUPABASE_URL')
       expect(content).toContain('SUPABASE_SERVICE_ROLE_KEY')
       expect(content).toContain('NEXUS_ENDPOINT')
-      expect(content).toContain('NEXUS_PRD_KEY')
+      expect(content).toContain('NEXUS_KEY')
       expect(content).toMatch(/Missing required env vars/)
     })
 
@@ -116,14 +116,14 @@ describe('SPEC-037: Secrets Hardening', () => {
     it('test-live.sh checks required Nexus vars only', () => {
       const content = readFileSync(resolve(REPO_ROOT, 'scripts/test-live.sh'), 'utf-8')
       expect(content).toContain('NEXUS_ENDPOINT')
-      expect(content).toContain('NEXUS_PRD_KEY')
+      expect(content).toContain('NEXUS_KEY')
     })
   })
 
   describe('AC-7: CLAUDE.md updated', () => {
     it('CLAUDE.md lists Doppler key names', () => {
       const content = readFileSync(resolve(REPO_ROOT, 'CLAUDE.md'), 'utf-8')
-      expect(content).toContain('NEXUS_PRD_KEY')
+      expect(content).toContain('NEXUS_KEY')
       expect(content).toContain('NEXUS_ENDPOINT')
       expect(content).toContain('SUPABASE_URL')
       expect(content).toContain('SUPABASE_SERVICE_ROLE_KEY')

@@ -1,6 +1,6 @@
 /**
  * SPEC-042: Live Smoke Tests against real Nexus.
- * Runs via: pnpm test:live (requires NEXUS_ENDPOINT + NEXUS_PRD_KEY from Doppler)
+ * Runs via: pnpm test:live (requires NEXUS_ENDPOINT + NEXUS_KEY from Doppler)
  * Database: local PostgreSQL+PostgREST (same as e2e-db-setup.sh)
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
@@ -20,11 +20,11 @@ import {
 } from './nexus-guard.js'
 
 const NEXUS_ENDPOINT = process.env.NEXUS_ENDPOINT ?? ''
-const NEXUS_PRD_KEY = process.env.NEXUS_PRD_KEY ?? ''
+const NEXUS_KEY = process.env.NEXUS_KEY ?? ''
 const E2E_SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? ''
 const E2E_SUPABASE_SERVICE_KEY = process.env.E2E_SUPABASE_SERVICE_KEY ?? ''
 
-const skip = !NEXUS_ENDPOINT || !NEXUS_PRD_KEY || !E2E_SUPABASE_URL || !E2E_SUPABASE_SERVICE_KEY
+const skip = !NEXUS_ENDPOINT || !NEXUS_KEY || !E2E_SUPABASE_URL || !E2E_SUPABASE_SERVICE_KEY
 
 interface ScenarioResult {
   name: string
@@ -47,7 +47,7 @@ function buildConfig(): AgentConfig {
   return {
     supabaseUrl: E2E_SUPABASE_URL,
     supabaseServiceKey: E2E_SUPABASE_SERVICE_KEY,
-    nexus: { endpoint: NEXUS_ENDPOINT, bearerToken: NEXUS_PRD_KEY },
+    nexus: { endpoint: NEXUS_ENDPOINT, bearerToken: NEXUS_KEY },
     market: 'de',
     defaultLocale: 'de-DE',
   }

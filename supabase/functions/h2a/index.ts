@@ -1,6 +1,6 @@
 import { handleRequest, initHandler, type HandlerEnv } from '@h2a/mb-agent'
 
-const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_PRD_KEY'] as const
+const REQUIRED_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'NEXUS_ENDPOINT', 'NEXUS_KEY'] as const
 const OPTIONAL_VARS = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL'] as const
 
 const missing = REQUIRED_VARS.filter(v => !Deno.env.get(v))
@@ -12,7 +12,7 @@ const env: HandlerEnv = {
   supabaseUrl: Deno.env.get('SUPABASE_URL')!,
   supabaseServiceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   nexusEndpoint: Deno.env.get('NEXUS_ENDPOINT')!,
-  nexusToken: Deno.env.get('NEXUS_PRD_KEY')!,
+  nexusToken: Deno.env.get('NEXUS_KEY')!,
 }
 
 const optionalMissing = OPTIONAL_VARS.filter(v => !Deno.env.get(v))

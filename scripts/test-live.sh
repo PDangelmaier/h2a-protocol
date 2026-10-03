@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test:live — Live Smoke-Test against real Nexus (D-019, D-025 §2)
-# Required: NEXUS_ENDPOINT + NEXUS_PRD_KEY (from Doppler)
-# NOT required: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (uses local DB)
+# test:live — Live Smoke-Test against real Nexus (D-019, D-025 §2, D-029)
+# Required from Doppler: NEXUS_TEST_ENDPOINT + NEXUS_TEST_KEY (TESTING pair)
+# Code reads neutral names: NEXUS_ENDPOINT + NEXUS_KEY
 # Runs via: doppler run --project h2a --config dev -- pnpm test:live
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# AC-4: Only Nexus credentials required
-REQUIRED_VARS=(NEXUS_ENDPOINT NEXUS_PRD_KEY)
+# D-029: Map Doppler TESTING pair to neutral names
+export NEXUS_ENDPOINT="${NEXUS_TEST_ENDPOINT:-${NEXUS_ENDPOINT:-}}"
+export NEXUS_KEY="${NEXUS_TEST_KEY:-${NEXUS_KEY:-}}"
+
+REQUIRED_VARS=(NEXUS_ENDPOINT NEXUS_KEY)
 for var in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!var:-}" ]; then
-    echo "FAIL: Missing $var"
+    echo "FAIL: Missing $var (set NEXUS_TEST_ENDPOINT + NEXUS_TEST_KEY in Doppler h2a/dev)"
     echo "Run via: doppler run --project h2a --config dev -- pnpm test:live"
     exit 1
   fi
 done
 
 echo "=== H2A test:live (D-019 limits: 20 calls, 50K tokens, synthetic only) ==="
-echo "NEXUS_ENDPOINT: set"
+echo "NEXUS_ENDPOINT: set (TESTING pair via D-029)"
 
 # Start local DB if not already running
 if ! docker ps --format '{{.Names}}' | grep -q "h2a-e2e-db"; then

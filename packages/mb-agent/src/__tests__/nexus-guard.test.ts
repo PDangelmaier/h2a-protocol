@@ -16,7 +16,7 @@ describe('SPEC-042: NexusGuard D-019 limits', () => {
 
   it('AC-2: allows calls within limits', () => {
     guard.checkBeforeCall(1000)
-    guard.recordCall(1000)
+    guard.recordCall('test-model', 200, 1000)
     expect(guard.callCount).toBe(1)
     expect(guard.totalInputTokens).toBe(1000)
   })
@@ -24,7 +24,7 @@ describe('SPEC-042: NexusGuard D-019 limits', () => {
   it('AC-2: rejects 21st call', () => {
     for (let i = 0; i < 20; i++) {
       guard.checkBeforeCall(100)
-      guard.recordCall(100)
+      guard.recordCall('test-model', 200, 100)
     }
     expect(guard.callCount).toBe(20)
 
@@ -34,7 +34,7 @@ describe('SPEC-042: NexusGuard D-019 limits', () => {
 
   it('AC-2: rejects call exceeding 50K input tokens', () => {
     guard.checkBeforeCall(45_000)
-    guard.recordCall(45_000)
+    guard.recordCall('test-model', 200, 45_000)
 
     expect(() => guard.checkBeforeCall(6_000)).toThrow(NexusGuardError)
     expect(() => guard.checkBeforeCall(6_000)).toThrow(/50000 input tokens/)
@@ -42,14 +42,14 @@ describe('SPEC-042: NexusGuard D-019 limits', () => {
 
   it('AC-2: allows call exactly at token boundary', () => {
     guard.checkBeforeCall(49_000)
-    guard.recordCall(49_000)
+    guard.recordCall('test-model', 200, 49_000)
 
     expect(() => guard.checkBeforeCall(1_000)).not.toThrow()
   })
 
   it('AC-2: rejects call one token over boundary', () => {
     guard.checkBeforeCall(49_000)
-    guard.recordCall(49_000)
+    guard.recordCall('test-model', 200, 49_000)
 
     expect(() => guard.checkBeforeCall(1_001)).toThrow(NexusGuardError)
   })
@@ -57,7 +57,7 @@ describe('SPEC-042: NexusGuard D-019 limits', () => {
   it('AC-2: NexusGuardError carries counters', () => {
     for (let i = 0; i < 20; i++) {
       guard.checkBeforeCall(100)
-      guard.recordCall(100)
+      guard.recordCall('test-model', 200, 100)
     }
 
     try {
@@ -73,7 +73,7 @@ describe('SPEC-042: NexusGuard D-019 limits', () => {
 
   it('AC-2: reset clears counters', () => {
     guard.checkBeforeCall(100)
-    guard.recordCall(100)
+    guard.recordCall('test-model', 200, 100)
     guard.reset()
     expect(guard.callCount).toBe(0)
     expect(guard.totalInputTokens).toBe(0)
