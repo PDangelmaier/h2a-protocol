@@ -424,6 +424,7 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
   it('SPEC-045 AC-4a: 404 (Modell nicht verfügbar) → Fallback zum nächsten Modell', async () => {
     nexus.enqueueError(404, 'Model not found')
     nexus.enqueueText('Guten Tag! Fallback hat funktioniert.')
+    enqueueBackgroundResponses()
 
     const { data: activeModels } = await supabase
       .from('model_config')
@@ -452,12 +453,16 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
     const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
     expect(fullText).toContain('Fallback')
-    expect(nexus.requests.length).toBe(2)
+    const sonnetReqs = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    expect(sonnetReqs.length).toBe(1)
+    const haikuReqs = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
+    expect(haikuReqs.length).toBeGreaterThanOrEqual(1)
   })
 
   it('SPEC-045 AC-4b: Netzwerkfehler → Fallback zum nächsten Modell', async () => {
     nexus.enqueueNetworkError('fetch failed')
     nexus.enqueueText('Guten Tag! Nach Netzwerkfehler geantwortet.')
+    enqueueBackgroundResponses()
 
     const { data: activeModels } = await supabase
       .from('model_config')
@@ -486,7 +491,10 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
     const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
     expect(fullText).toContain('Netzwerkfehler')
-    expect(nexus.requests.length).toBe(2)
+    const sonnetReqs = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    expect(sonnetReqs.length).toBe(1)
+    const haikuReqs = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
+    expect(haikuReqs.length).toBeGreaterThanOrEqual(1)
   })
 
   it('SPEC-045 AC-4c: Fallback-Kette enthält nur verschiedene Modelle', async () => {
