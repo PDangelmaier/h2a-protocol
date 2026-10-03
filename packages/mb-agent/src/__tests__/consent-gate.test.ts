@@ -18,10 +18,12 @@ function makeMockSupabase(overrides: Record<string, unknown> = {}) {
       const tableData = overrides[table]
       tableChain.then = (resolve: (v: unknown) => void) =>
         Promise.resolve({ data: Array.isArray(tableData) ? tableData : [], error: null }).then(resolve)
-      tableChain.single = vi.fn().mockResolvedValue({
+      const singleResult = {
         data: Array.isArray(tableData) ? tableData[0] : tableData,
         error: null,
-      })
+      }
+      tableChain.single = vi.fn().mockResolvedValue(singleResult)
+      tableChain.maybeSingle = vi.fn().mockResolvedValue(singleResult)
       return tableChain
     }
     return chain
@@ -84,7 +86,7 @@ describe('SPEC-032 AC-2: fehlender Consent → Hinweis in Kundensprache', () => 
     })
 
     const result = await executeToolWithConsent(
-      { toolId: 't-1', input: {} },
+      { toolName: 'vehicle.remote_control', input: {} },
       'prof-1',
       [],
       mock as never,
@@ -204,7 +206,7 @@ describe('SPEC-032 AC-5: anonyme Sessions erhalten nur consent-freie Tools', () 
     })
 
     const result = await executeToolWithConsent(
-      { toolId: 't-free', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'anon-prof',
       [],
       mock as never,
@@ -219,7 +221,7 @@ describe('SPEC-032 AC-5: anonyme Sessions erhalten nur consent-freie Tools', () 
     })
 
     const result = await executeToolWithConsent(
-      { toolId: 't-locked', input: {} },
+      { toolName: 'configurator', input: {} },
       'anon-prof',
       [],
       mock as never,

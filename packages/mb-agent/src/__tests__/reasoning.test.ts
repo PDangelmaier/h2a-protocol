@@ -414,7 +414,7 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
 
     expect(mockLoadGrantedConsents).toHaveBeenCalledWith('prof-1', expect.anything())
     expect(mockExecuteTool).toHaveBeenCalledWith(
-      expect.objectContaining({ toolId: 'tc-c' }),
+      expect.objectContaining({ toolName: 'configurator' }),
       'prof-1',
       ['vehicle_data', 'location_services'],
       expect.anything(),

@@ -35,3 +35,9 @@ jobs:
         run: deno check --frozen --no-npm --config supabase/functions/deno.json supabase/functions/h2a/index.ts
 
       - run: pnpm run -r test
+
+      - name: Start E2E DB + PostgREST
+        run: KEEP_CONTAINER=1 bash scripts/e2e-db-setup.sh
+
+      - name: Run E2E tests
+        run: pnpm --filter @h2a/mb-agent test:e2e

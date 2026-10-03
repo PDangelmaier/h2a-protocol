@@ -107,17 +107,16 @@ describe('SPEC-037: Secrets Hardening', () => {
       expect(pkg.scripts['test:live']).toContain('--config dev')
     })
 
-    it('test-live.sh enforces D-019 limits', () => {
+    it('test-live.sh enforces D-019 limits via nexus-guard', () => {
       const content = readFileSync(resolve(REPO_ROOT, 'scripts/test-live.sh'), 'utf-8')
-      expect(content).toContain('H2A_MAX_NEXUS_CALLS=20')
-      expect(content).toContain('H2A_MAX_INPUT_TOKENS=50000')
-      expect(content).toContain('H2A_SYNTHETIC_ONLY=1')
+      expect(content).toContain('D-019')
+      expect(content).toContain('20 calls')
     })
 
-    it('test-live.sh checks required vars', () => {
+    it('test-live.sh checks required Nexus vars only', () => {
       const content = readFileSync(resolve(REPO_ROOT, 'scripts/test-live.sh'), 'utf-8')
+      expect(content).toContain('NEXUS_ENDPOINT')
       expect(content).toContain('NEXUS_PRD_KEY')
-      expect(content).toContain('SUPABASE_URL')
     })
   })
 

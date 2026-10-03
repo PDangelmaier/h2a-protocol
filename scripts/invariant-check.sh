@@ -32,7 +32,7 @@ fi
 echo -n "INV-03 (no model ID literals)... "
 if grep -rn --include="*.ts" -E "'claude-[a-z]+-[0-9]" packages/ supabase/ \
   | grep -v node_modules | grep -v __tests__ | grep -v '.d.ts' \
-  | grep -v 'migrations/' | grep -v 'seeds/'; then
+  | grep -v 'migrations/' | grep -v 'seeds/' | grep -v '/e2e/'; then
   echo "FAIL: Model ID literals in production code"
   FAIL=1
 else

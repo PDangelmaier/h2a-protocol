@@ -12,6 +12,12 @@ function mockSupabase(row: Record<string, unknown> | null) {
   chain.from = vi.fn().mockReturnValue(chain)
   chain.select = vi.fn().mockReturnValue(chain)
   chain.eq = vi.fn().mockReturnValue(chain)
+  chain.order = vi.fn().mockReturnValue(chain)
+  chain.limit = vi.fn().mockReturnValue(chain)
+  chain.maybeSingle = vi.fn().mockResolvedValue({
+    data: row,
+    error: row ? null : { message: 'not found' },
+  })
   chain.single = vi.fn().mockResolvedValue({
     data: row,
     error: row ? null : { message: 'not found' },
@@ -148,7 +154,7 @@ describe('SPEC-005 AC-4: DB price change works without deploy (cache expiry)', (
     await resolveModelPricing('main', supabase)
     await resolveModelPricing('main', supabase)
 
-    expect((supabase as Record<string, { mock: { calls: unknown[] } }>).single.mock.calls).toHaveLength(1)
+    expect((supabase as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls).toHaveLength(1)
   })
 
   it('invalidatePricingCache forces re-read from DB', async () => {

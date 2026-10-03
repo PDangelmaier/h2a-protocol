@@ -34,6 +34,7 @@ import type { ConversationState } from './state-tracking.js'
 
 interface SessionState {
   id: string
+  dbId: string
   profileId: string
   channel: 'web' | 'smart_storefront' | 'whatsapp' | 'mbux' | 'voice' | 'app' | 'dealer'
   locale: string
@@ -69,6 +70,7 @@ interface ReasoningResult {
   degraded?: { reason: DegradationReason }
   promptVersion?: number | null
   experimentAssignment?: { experimentId: string; variantIndex: number } | null
+  backgroundTasks?: Promise<void>[]
 }
 
 export class ClientDisconnectedError extends Error {
@@ -193,29 +195,37 @@ export async function reasoningLoop(
   }
 
   const turnId = crypto.randomUUID()
-  persistTurn(session, signal, response, intent, supabase, promptVersion, experimentAssignment).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[persistTurn] session=${session.id} turn=${turnId}: ${msg}`)
-    trackPersistTurnFailed(session.id, turnId, msg).catch(() => {})
-  })
+  const backgroundTasks: Promise<void>[] = []
 
-  extractMemories(
-    session.profileId, session.id,
-    { user: signal.content, assistant: response.text },
-    null, config.nexus, supabase,
-  ).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[extractMemories] session=${session.id}: ${msg}`)
-  })
+  backgroundTasks.push(
+    persistTurn(session, signal, response, intent, supabase, promptVersion, experimentAssignment).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[persistTurn] session=${session.id} turn=${turnId}: ${msg}`)
+      trackPersistTurnFailed(session.id, turnId, msg).catch(() => {})
+    }),
+  )
 
-  trackConversationState(
-    session.id,
-    { user: signal.content, assistant: response.text },
-    config.nexus, supabase,
-  ).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[trackConversationState] session=${session.id}: ${msg}`)
-  })
+  backgroundTasks.push(
+    extractMemories(
+      session.profileId, session.id,
+      { user: signal.content, assistant: response.text },
+      null, config.nexus, supabase,
+    ).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[extractMemories] session=${session.id}: ${msg}`)
+    }),
+  )
+
+  backgroundTasks.push(
+    trackConversationState(
+      session.id,
+      { user: signal.content, assistant: response.text },
+      config.nexus, supabase,
+    ).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[trackConversationState] session=${session.id}: ${msg}`)
+    }),
+  )
 
   const allTurns = [
     ...session.conversationHistory.map((m, i) => ({ role: m.role as 'user' | 'assistant', content: m.content, sequence: i + 1 })),
@@ -224,10 +234,12 @@ export async function reasoningLoop(
   ]
   const postTurnEstimate = estimateSessionTokens(systemPromptWithCanary, allTurns, toolTokenEstimate)
   if (needsSummarization(postTurnEstimate)) {
-    summarizeOlderTurns(session.id, allTurns, config.nexus, supabase).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[summarization] session=${session.id}: ${msg}`)
-    })
+    backgroundTasks.push(
+      summarizeOlderTurns(session.id, allTurns, config.nexus, supabase).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error(`[summarization] session=${session.id}: ${msg}`)
+      }),
+    )
   }
 
   return {
@@ -241,6 +253,7 @@ export async function reasoningLoop(
       ? { experimentId: experimentAssignment.experimentId, variantIndex: experimentAssignment.variantIndex }
       : null,
     ...(response.degraded ? { degraded: response.degraded } : {}),
+    backgroundTasks,
   }
 }
 
@@ -426,7 +439,7 @@ async function processResponse(
           return { toolUseId: call.id, content: [{ json: delimited }], truncatedSize: JSON.stringify(result.data).length }
         }
         const toolResult = await executeToolWithConsent(
-          { toolId: call.id, input: call.input },
+          { toolName: call.name, input: call.input },
           profileId,
           grantedConsents,
           supabase,
@@ -504,13 +517,27 @@ async function persistTurn(
   promptVersion?: number | null,
   experimentAssignment?: { experimentId: string; variantIndex: number } | null,
 ): Promise<void> {
-  const { data: conv } = await supabase
+  let { data: conv } = await supabase
     .from('conversations')
     .select('id, turn_count')
     .eq('h2a_session_id', session.id)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  if (!conv) {
+    const { data: created } = await supabase
+      .from('conversations')
+      .insert({
+        h2a_session_id: session.id,
+        profile_id: session.profileId,
+        channel: session.channel,
+        turn_count: 0,
+      })
+      .select('id, turn_count')
+      .single()
+    conv = created
+  }
 
   if (!conv) return
 
@@ -519,14 +546,14 @@ async function persistTurn(
   await supabase.from('conversation_turns').insert([
     {
       conversation_id: conv.id,
-      session_id: session.id,
+      session_id: session.dbId,
       role: 'user',
       content: { text: signal.content },
       sequence: nextSeq,
     },
     {
       conversation_id: conv.id,
-      session_id: session.id,
+      session_id: session.dbId,
       role: 'assistant',
       content: { text: response.text },
       tools_used: response.toolsUsed,

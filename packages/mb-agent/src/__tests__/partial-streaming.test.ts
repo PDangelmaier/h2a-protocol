@@ -116,14 +116,14 @@ describe('SPEC-002 AC-2: Tool status messages from configuration', () => {
 })
 
 describe('SPEC-002 AC-3: Status events pass through PII filter', () => {
-  it('edge function filterSseEvent handles status events', async () => {
+  it('handler filterSseEvent handles status events', async () => {
     const fs = await import('node:fs')
-    const edgeFn = fs.readFileSync(
-      new URL('../../../../supabase/functions/h2a/index.ts', import.meta.url),
+    const handlerSrc = fs.readFileSync(
+      new URL('../handler.ts', import.meta.url),
       'utf-8',
     )
-    expect(edgeFn).toContain("pushEvent({ type: 'status'")
-    expect(edgeFn).toContain('filterSseEvent')
+    expect(handlerSrc).toContain("pushEvent({ type: 'status'")
+    expect(handlerSrc).toContain('filterSseEvent')
   })
 
   it('status message strings contain no PII patterns', () => {
@@ -181,15 +181,15 @@ describe('SPEC-002 AC-5: No status events without tool calls', () => {
 
   it('SPEC-033 AC-5 SSE contract preserved — status events only within tool rounds', async () => {
     const fs = await import('node:fs')
-    const edgeFn = fs.readFileSync(
-      new URL('../../../../supabase/functions/h2a/index.ts', import.meta.url),
+    const handlerSrc = fs.readFileSync(
+      new URL('../handler.ts', import.meta.url),
       'utf-8',
     )
-    expect(edgeFn).toContain("type: 'presence.update', state: 'conversing'")
-    expect(edgeFn).toContain("type: 'agent.frame'")
-    expect(edgeFn).toContain("frameType: 'text'")
-    expect(edgeFn).toContain("frameType: 'end'")
-    expect(edgeFn).toContain("type: 'presence.update', state: 'attentive'")
+    expect(handlerSrc).toContain("type: 'presence.update', state: 'conversing'")
+    expect(handlerSrc).toContain("type: 'agent.frame'")
+    expect(handlerSrc).toContain("frameType: 'text'")
+    expect(handlerSrc).toContain("frameType: 'end'")
+    expect(handlerSrc).toContain("type: 'presence.update', state: 'attentive'")
   })
 })
 
