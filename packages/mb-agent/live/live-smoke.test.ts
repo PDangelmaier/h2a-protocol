@@ -13,6 +13,7 @@ import { invalidatePromptCacheConfig } from '../src/prompt-cache.js'
 import { invalidateRoutingConfig } from '../src/turn-classifier.js'
 import {
   createNexusGuard,
+  extractModelFromUrl,
   isSyntheticSession,
   SyntheticSessionError,
   SMOKE_PREFIX,
@@ -29,6 +30,7 @@ interface ScenarioResult {
   name: string
   model: string
   calls: number
+  successfulCalls: number
   inputTokens: number
   outputTokens: number
   costUsd: number
@@ -69,12 +71,16 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
   beforeAll(() => {
     originalFetch = globalThis.fetch
 
-    // Install BEFORE createClient — supabase-js captures fetch at init
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString()
 
       if (url.includes(NEXUS_ENDPOINT)) {
         guard.checkBeforeCall(2000)
+
+        const response = await originalFetch(input, init)
+        const modelId = extractModelFromUrl(url, NEXUS_ENDPOINT)
+        guard.recordCall(modelId, response.status, 2000)
+        return response
       }
 
       const rewritten = url.replace('/rest/v1/', '/')
@@ -163,6 +169,7 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
     const fixture = await createSynthSession()
     const session = buildSession(fixture)
     const startCalls = guard.callCount
+    const startSuccessful = guard.successfulCalls
     const startTokens = guard.totalInputTokens
     const start = performance.now()
 
@@ -185,12 +192,15 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
       .single()
 
     const calls = guard.callCount - startCalls
+    const successfulCalls = guard.successfulCalls - startSuccessful
     const inputTokens = guard.totalInputTokens - startTokens
+    const model = guard.lastRespondingModel() ?? 'no-response'
 
     const entry: ScenarioResult = {
       name,
-      model: 'from-db',
+      model,
       calls,
+      successfulCalls,
       inputTokens,
       outputTokens: 0,
       costUsd: Number(sessionRow?.cost_usd ?? 0),
@@ -203,6 +213,13 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
           : []),
       ],
       passed: false,
+    }
+
+    // M5: A scenario only passes if at least one Nexus call succeeded (200)
+    if (successfulCalls === 0) {
+      entry.error = `No successful Nexus calls (${calls} attempted, all failed)`
+      results.push(entry)
+      throw new Error(`Scenario "${name}" failed: ${entry.error}`)
     }
 
     try {
@@ -273,15 +290,26 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
 
 function writeReport() {
   const totalCalls = guard.callCount
+  const totalSuccessful = guard.successfulCalls
   const totalTokens = guard.totalInputTokens
   const totalCost = results.reduce((s, r) => s + r.costUsd, 0)
+  const allPassed = results.length > 0 && results.every(r => r.passed)
+
+  // M5: NO_LIVE_RUN when zero successful Nexus calls
+  const liveResult = totalSuccessful === 0
+    ? 'NO_LIVE_RUN'
+    : allPassed
+      ? 'PASS'
+      : 'FAIL'
 
   const lines = [
     '---',
     `id: SMOKE-042`,
     `spec: SPEC-042`,
     `timestamp: ${new Date().toISOString()}`,
+    `result: ${liveResult}`,
     `nexus_calls_total: ${totalCalls}`,
+    `nexus_calls_successful: ${totalSuccessful}`,
     `input_tokens_total: ${totalTokens}`,
     `cost_usd_total: ${totalCost.toFixed(6)}`,
     `scenarios_passed: ${results.filter(r => r.passed).length}/${results.length}`,
@@ -289,14 +317,21 @@ function writeReport() {
     '',
     '# Live-Smoke Report SPEC-042',
     '',
-    '| Szenario | Modell | Calls | Input-Token | Kosten USD | TTFT ms | Events | Bestanden |',
-    '|----------|--------|-------|-------------|------------|---------|--------|-----------|',
+    ...(liveResult === 'NO_LIVE_RUN'
+      ? [
+          '> **NO_LIVE_RUN:** Kein Nexus-Call war erfolgreich (alle 401/Fehler).',
+          '> Ergebnis ist weder bestanden noch fehlgeschlagen — Nexus-Zugang muss vom PO geklärt werden.',
+          '',
+        ]
+      : []),
+    '| Szenario | Modell | Calls | Erfolg | Input-Token | Kosten USD | TTFT ms | Events | Bestanden |',
+    '|----------|--------|-------|--------|-------------|------------|---------|--------|-----------|',
     ...results.map(
       r =>
-        `| ${r.name} | ${r.model} | ${r.calls} | ${r.inputTokens} | ${r.costUsd.toFixed(6)} | ${r.ttftMs} | ${r.events.join(', ') || '—'} | ${r.passed ? 'ja' : `nein: ${r.error}`} |`,
+        `| ${r.name} | ${r.model} | ${r.calls} | ${r.successfulCalls}/${r.calls} | ${r.inputTokens} | ${r.costUsd.toFixed(6)} | ${r.ttftMs} | ${r.events.join(', ') || '—'} | ${r.passed ? 'ja' : `nein: ${r.error}`} |`,
     ),
     '',
-    `**Gesamt:** ${totalCalls} Nexus-Calls, ${totalTokens} Input-Token, $${totalCost.toFixed(6)} USD`,
+    `**Gesamt:** ${totalCalls} Nexus-Calls (${totalSuccessful} erfolgreich), ${totalTokens} Input-Token, $${totalCost.toFixed(6)} USD`,
     '',
     `D-019 Guard: ${totalCalls}/20 Calls, ${totalTokens}/50000 Token`,
   ]
