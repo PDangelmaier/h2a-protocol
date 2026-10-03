@@ -39,6 +39,7 @@ function baseMetrics(overrides?: Partial<TtftMetrics>): TtftMetrics {
     ttftMs: 800,
     totalMs: 2000,
     sessionId: 'test-session-001',
+    sessionDbId: '00000000-0000-0000-0000-000000000001',
     model: 'claude-sonnet-4-6',
     toolRounds: 2,
     ...overrides,
@@ -64,7 +65,8 @@ describe('ttft-tracking', () => {
       expect(measurementCall).toBeDefined()
       const row = measurementCall![0] as Record<string, unknown>
       expect(row.event_type).toBe('ttft_measurement')
-      expect(row.session_id).toBe('test-session-001')
+      expect(row.session_id).toBe('00000000-0000-0000-0000-000000000001')
+      expect((row.metadata as Record<string, unknown>).h2a_session_id).toBe('test-session-001')
       expect((row.metadata as Record<string, unknown>).ttft_ms).toBe(800)
       expect((row.metadata as Record<string, unknown>).total_ms).toBe(2000)
     })

@@ -49,6 +49,7 @@ export async function createTestSession(supabase: SupabaseClient): Promise<Sessi
     channel: 'web',
     journey_phase: 'research',
     status: 'active',
+    channel_metadata: { market: 'de', locale: 'de-DE' },
   })
 
   return { sessionId, dbId, profileId }
@@ -63,7 +64,7 @@ export function invalidateAllCaches() {
 }
 
 export async function cleanupSession(supabase: SupabaseClient, fixture: SessionFixture) {
-  await supabase.from('analytics_events').delete().eq('session_id', fixture.sessionId)
+  await supabase.from('analytics_events').delete().eq('session_id', fixture.dbId)
   await supabase.from('conversation_turns').delete().eq('session_id', fixture.dbId)
   await supabase.from('conversations').delete().eq('h2a_session_id', fixture.sessionId)
   await supabase.from('agent_memories').delete().eq('profile_id', fixture.profileId)

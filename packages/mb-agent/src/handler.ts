@@ -203,14 +203,36 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
 
   const stream = new ReadableStream({
     async start(controller) {
-      const body = await req.json()
+      let body: Record<string, unknown>
+      try {
+        body = await req.json()
+      } catch {
+        pushEvent({ type: 'degraded_response', reason: 'invalid_request' })
+        pushEvent({ type: 'agent.frame', frameType: 'text', content: { text: 'Ungültige Anfrage. Bitte versuchen Sie es erneut.', streaming: false } })
+        pushEvent({ type: 'agent.frame', frameType: 'end', content: {} })
+        drainToController(controller)
+        controller.close()
+        return
+      }
 
-      const { data: session } = await supabase
-        .from('sessions')
-        .select('id, customer_id, channel, journey_phase, intent_score')
-        .eq('h2a_session_id', sessionId)
-        .eq('status', 'active')
-        .single()
+      type SessionRow = { id: string; customer_id: string; channel: string; journey_phase: string; intent_score: number; channel_metadata: unknown }
+      let session: SessionRow | null = null
+      try {
+        const { data } = await supabase
+          .from('sessions')
+          .select('id, customer_id, channel, journey_phase, intent_score, channel_metadata')
+          .eq('h2a_session_id', sessionId)
+          .eq('status', 'active')
+          .single()
+        session = data as SessionRow | null
+      } catch {
+        pushEvent({ type: 'degraded_response', reason: 'internal_error' })
+        pushEvent({ type: 'agent.frame', frameType: 'text', content: { text: 'Verbindungsproblem. Bitte versuchen Sie es erneut.', streaming: false } })
+        pushEvent({ type: 'agent.frame', frameType: 'end', content: {} })
+        drainToController(controller)
+        controller.close()
+        return
+      }
 
       if (!session) {
         pushEvent({ type: 'error', message: 'Invalid or inactive session' })
@@ -221,7 +243,7 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
 
       const { data: profile } = await supabase
         .from('customer_profiles')
-        .select('display_name, pid_score, locale, market')
+        .select('display_name, pid_score, locale')
         .eq('id', session.customer_id)
         .single()
 
@@ -237,13 +259,17 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
         content: typeof t.content === 'string' ? t.content : (t.content as { text?: string })?.text ?? JSON.stringify(t.content),
       }))
 
+      const chMeta = session.channel_metadata as { market?: string; locale?: string } | null
+      const locale = profile?.locale ?? chMeta?.locale ?? 'de-AT'
+      const market = chMeta?.market ?? locale.split('-')[1]?.toLowerCase() ?? 'de'
+
       const sessionState = {
         id: sessionId,
         dbId: session.id,
         profileId: session.customer_id ?? '',
         channel: (session.channel ?? 'web') as 'web' | 'smart_storefront' | 'whatsapp' | 'mbux' | 'voice' | 'app' | 'dealer',
-        locale: profile?.locale ?? 'de-AT',
-        market: profile?.market ?? 'de',
+        locale,
+        market,
         journeyPhase: (session.journey_phase ?? 'awareness') as 'awareness' | 'research' | 'configuration' | 'pricing' | 'purchase' | 'order' | 'onboarding' | 'ownership' | 'service' | 'lifecycle',
         pidScore: profile?.pid_score ?? 0,
         conversationHistory,
@@ -253,8 +279,8 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
         supabaseUrl: env.supabaseUrl,
         supabaseServiceKey: env.supabaseServiceKey,
         nexus: { endpoint: env.nexusEndpoint, bearerToken: env.nexusToken },
-        market: profile?.market ?? 'de',
-        defaultLocale: profile?.locale ?? 'de-AT',
+        market,
+        defaultLocale: locale,
       }
 
       const modelId = await resolveModel('main', supabase).catch(() => 'unknown')
@@ -268,7 +294,7 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
       }
 
       try {
-        const result = await reasoningLoop(sessionState, { type: 'message', content: body.text ?? '', timestamp: new Date() }, agentConfig, onStatusEvent, req.signal)
+        const result = await reasoningLoop(sessionState, { type: 'message', content: String(body.text ?? ''), timestamp: new Date() }, agentConfig, onStatusEvent, req.signal)
 
         if (result.securityEvents?.length) {
           for (const ev of result.securityEvents) {
@@ -293,6 +319,7 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
           ttftMs: ttftMs || totalMs,
           totalMs,
           sessionId,
+          sessionDbId: session.id,
           model: modelId,
           toolRounds: result.toolsUsed.length,
         }
@@ -313,6 +340,9 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
           drainToController(controller)
         }
       } finally {
+        if (backgroundTasks.length > 0) {
+          await Promise.allSettled(backgroundTasks).catch(() => {})
+        }
         controller.close()
       }
     },

@@ -70,7 +70,7 @@ interface ReasoningResult {
   degraded?: { reason: DegradationReason }
   promptVersion?: number | null
   experimentAssignment?: { experimentId: string; variantIndex: number } | null
-  backgroundTasks?: Promise<void>[]
+  backgroundTasks?: Promise<unknown>[]
 }
 
 export class ClientDisconnectedError extends Error {
@@ -195,7 +195,7 @@ export async function reasoningLoop(
   }
 
   const turnId = crypto.randomUUID()
-  const backgroundTasks: Promise<void>[] = []
+  const backgroundTasks: Promise<unknown>[] = []
 
   backgroundTasks.push(
     persistTurn(session, signal, response, intent, supabase, promptVersion, experimentAssignment).catch((err: unknown) => {
@@ -410,7 +410,7 @@ async function processResponse(
     await checkTokenBudget(sessionId, estimate)
 
     const { result: fbResult, cacheRejected } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
-    await trackNexusCost(sessionId, 'main', fbResult, supabase)
+    await trackNexusCost(sessionId, 'main', fbResult, supabase, fbResult.actualModelId)
     if (cacheRejected) trackPromptCacheRejected(sessionId).catch(() => {})
 
     if (fbResult.stopReason !== 'tool_use' || fbResult.toolCalls.length === 0) {
@@ -482,7 +482,7 @@ async function processResponse(
       )
       await checkTokenBudget(sessionId, abortEstimate)
       const { result: abortResult } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
-      await trackNexusCost(sessionId, 'main', abortResult, supabase)
+      await trackNexusCost(sessionId, 'main', abortResult, supabase, abortResult.actualModelId)
       return { text: abortResult.text, toolsUsed, newMemories }
     }
 
@@ -504,7 +504,7 @@ async function processResponse(
   await checkTokenBudget(sessionId, finalEstimate)
 
   const { result: finalFbResult } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
-  await trackNexusCost(sessionId, 'main', finalFbResult, supabase)
+  await trackNexusCost(sessionId, 'main', finalFbResult, supabase, finalFbResult.actualModelId)
   return { text: finalFbResult.text, toolsUsed, newMemories }
 }
 

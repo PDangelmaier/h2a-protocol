@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ModelPurpose } from './model-config.js'
 import type { NexusStreamResult } from './nexus.js'
-import { resolveModelPricing } from './model-config.js'
+import { resolveModelPricing, resolveModelPricingByModelId } from './model-config.js'
 import { estimateTokens } from './token-estimation.js'
 import { trackCostLimitReached, trackTokenBudgetExceeded } from './langfuse.js'
 
@@ -32,8 +32,11 @@ export async function trackNexusCost(
   purpose: ModelPurpose,
   result: Pick<NexusStreamResult, 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens'>,
   supabase: SupabaseClient,
+  actualModelId?: string,
 ): Promise<CostTrackResult> {
-  const pricing = await resolveModelPricing(purpose, supabase)
+  const pricing = actualModelId
+    ? await resolveModelPricingByModelId(actualModelId, supabase)
+    : await resolveModelPricing(purpose, supabase)
   const cachedTokens = result.cacheReadInputTokens ?? 0
   const uncachedInputTokens = result.inputTokens - cachedTokens
   const costUsd =

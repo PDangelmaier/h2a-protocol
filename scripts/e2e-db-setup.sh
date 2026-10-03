@@ -132,3 +132,9 @@ echo ""
 echo "E2E_DB_URL=postgresql://$DB_USER:$DB_PASS@127.0.0.1:$DB_PORT/$DB_NAME"
 echo "E2E_SUPABASE_URL=http://127.0.0.1:$POSTGREST_PORT"
 echo "E2E_SUPABASE_SERVICE_KEY=$SERVICE_ROLE_JWT"
+
+if [ -n "${GITHUB_ENV:-}" ]; then
+  echo "E2E_SUPABASE_URL=http://127.0.0.1:$POSTGREST_PORT" >> "$GITHUB_ENV"
+  echo "E2E_SUPABASE_SERVICE_KEY=$SERVICE_ROLE_JWT" >> "$GITHUB_ENV"
+  echo "Exported E2E env vars to GITHUB_ENV"
+fi

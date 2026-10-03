@@ -228,6 +228,7 @@ export function invalidatePricingCache(purpose?: ModelPurpose): void {
     pricingCache.delete(purpose)
   } else {
     pricingCache.clear()
+    modelPricingCache.clear()
   }
 }
 
@@ -273,6 +274,47 @@ export async function resolveModelPricing(
     expiresAt: Date.now() + CACHE_TTL_MS,
   })
 
+  return pricing
+}
+
+const modelPricingCache = new Map<string, PricingCacheEntry>()
+
+export async function resolveModelPricingByModelId(
+  modelId: string,
+  supabase: SupabaseClient,
+): Promise<ModelPricing> {
+  const cached = modelPricingCache.get(modelId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.pricing
+  }
+
+  const { data, error } = await supabase
+    .from('model_config')
+    .select('purpose, cost_per_input_1k, cost_per_output_1k, cost_per_cached_input_1k')
+    .eq('model_id', modelId)
+    .limit(1)
+    .maybeSingle()
+
+  if (error || !data) {
+    throw new Error(`No model_config row for model_id "${modelId}" — cannot resolve pricing`)
+  }
+
+  const row = data as { purpose: string; cost_per_input_1k: number | null; cost_per_output_1k: number | null; cost_per_cached_input_1k: number | null }
+
+  if (row.cost_per_input_1k == null || row.cost_per_output_1k == null || row.cost_per_cached_input_1k == null) {
+    await trackCostPriceMissing(row.purpose as ModelPurpose, modelId)
+    throw new Error(`Missing price for model "${modelId}" — run migration 024`)
+  }
+
+  const pricing: ModelPricing = {
+    purpose: row.purpose as ModelPurpose,
+    modelId,
+    costPerInput1k: Number(row.cost_per_input_1k),
+    costPerOutput1k: Number(row.cost_per_output_1k),
+    costPerCachedInput1k: Number(row.cost_per_cached_input_1k),
+  }
+
+  modelPricingCache.set(modelId, { pricing, expiresAt: Date.now() + CACHE_TTL_MS })
   return pricing
 }
 
