@@ -16,9 +16,9 @@ vi.mock('../model-config.js', () => ({
   resolveModelPricing: vi.fn().mockResolvedValue({
     purpose: 'summarization',
     modelId: 'claude-haiku-4-5',
-    costPerInput1k: 0.00104,
-    costPerOutput1k: 0.0052,
-    costPerCachedInput1k: 0.000104,
+    costPerInput1k: 0.0013,
+    costPerOutput1k: 0.0065,
+    costPerCachedInput1k: 0.00013,
   }),
 }))
 
