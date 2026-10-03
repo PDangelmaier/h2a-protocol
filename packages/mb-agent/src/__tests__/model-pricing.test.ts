@@ -154,7 +154,7 @@ describe('SPEC-005 AC-4: DB price change works without deploy (cache expiry)', (
     await resolveModelPricing('main', supabase)
     await resolveModelPricing('main', supabase)
 
-    expect((supabase as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls).toHaveLength(1)
+    expect((supabase as unknown as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls).toHaveLength(1)
   })
 
   it('invalidatePricingCache forces re-read from DB', async () => {

@@ -43,6 +43,7 @@ const okResult = {
   stopReason: 'end_turn',
   inputTokens: 50,
   outputTokens: 10,
+  cacheReadInputTokens: 0,
 }
 
 beforeEach(() => {
@@ -316,6 +317,7 @@ describe('SPEC-024: Model-Fallback-Chain', () => {
         stopReason: 'tool_use',
         inputTokens: 100,
         outputTokens: 50,
+        cacheReadInputTokens: 0,
       }
       mockCallNexus.mockResolvedValueOnce(detailed)
 

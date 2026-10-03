@@ -7,12 +7,14 @@ vi.mock('../langfuse.js', () => ({
   trackMissingPin: vi.fn().mockResolvedValue(undefined),
 }))
 
-const ALL_PURPOSES: ModelPurpose[] = ['main', 'tool-routing', 'memory-extraction', 'evaluation']
+const ALL_PURPOSES: ModelPurpose[] = ['main', 'fast', 'tool-routing', 'memory-extraction', 'evaluation', 'summarization']
 const EXPECTED_MODELS: Record<ModelPurpose, string> = {
   'main': 'claude-sonnet-4-6',
+  'fast': 'claude-haiku-4-5',
   'tool-routing': 'claude-sonnet-4-6',
   'memory-extraction': 'claude-haiku-4-5',
   'evaluation': 'claude-haiku-4-5',
+  'summarization': 'claude-haiku-4-5',
 }
 
 function mockSupabase(activeModels: Record<string, string>) {

@@ -18,7 +18,7 @@ const fixture: FixtureEntry[] = JSON.parse(
   readFileSync(resolve(__dirname, 'fixtures/routing-fixture.json'), 'utf-8'),
 )
 
-function mockSupabase(fastRoutingEnabled: boolean | string) {
+function mockSupabase(fastRoutingEnabled: boolean | string | number) {
   return {
     from: () => ({
       select: () => ({

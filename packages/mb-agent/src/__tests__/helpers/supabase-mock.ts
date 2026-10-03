@@ -42,7 +42,7 @@ export function mockSupabaseFrom(
   mock: ReturnType<typeof createMockSupabase>,
   overrides: Record<string, QueryResult>,
 ) {
-  mock.from.mockImplementation((table: string) => {
+  mock.from.mockImplementation(((table: string) => {
     const result = overrides[table] ?? { data: null, error: null }
 
     const chain: Record<string, unknown> = {}
@@ -62,5 +62,5 @@ export function mockSupabaseFrom(
     chain.then = (_resolve: (v: QueryResult) => void) => Promise.resolve(result).then(_resolve)
 
     return chain
-  })
+  }) as never)
 }

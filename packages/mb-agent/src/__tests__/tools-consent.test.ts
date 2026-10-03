@@ -24,7 +24,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
     })
 
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: { amount: 1000 } },
+      { toolName: 'tool-1', input: { amount: 1000 } },
       'prof-1',
       [],
       mock as never,
@@ -45,7 +45,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
     })
 
     const result = await executeToolWithConsent(
-      { toolId: 'tool-2', input: { query: 'EQS' } },
+      { toolName: 'tool-2', input: { query: 'EQS' } },
       'prof-1',
       ['ai_personalization'],
       mock as never,
@@ -65,7 +65,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
     })
 
     const result = await executeToolWithConsent(
-      { toolId: 'tool-3', input: { q: 'Garantie' } },
+      { toolName: 'tool-3', input: { q: 'Garantie' } },
       'prof-1',
       [],
       mock as never,
@@ -79,7 +79,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
     const mock = makeMockSupabase(null)
 
     const result = await executeToolWithConsent(
-      { toolId: 'nonexistent', input: {} },
+      { toolName: 'nonexistent', input: {} },
       'prof-1',
       ['ai_personalization'],
       mock as never,
@@ -99,7 +99,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
     })
 
     const result = await executeToolWithConsent(
-      { toolId: 'tool-4', input: {} },
+      { toolName: 'tool-4', input: {} },
       'prof-1',
       ['ai_personalization'],
       mock as never,
