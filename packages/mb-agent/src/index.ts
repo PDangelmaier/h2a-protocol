@@ -32,7 +32,7 @@ export { pruneTools, loadPruningConfig, invalidatePruningConfig, matchesChannel,
 export type { PruningContext, PruningConfig, ScoredTool } from './tool-pruning.js'
 export { GUARDRAIL_FEW_SHOT_EXAMPLES, buildFewShotBlock } from './few-shot-guardrails.js'
 export type { GuardrailExample } from './few-shot-guardrails.js'
-export { filterPii, StreamPiiFilter } from './pii-filter.js'
+export { filterPii, filterSseEvent, StreamPiiFilter } from './pii-filter.js'
 export type { PiiMaskResult, PiiHit, PiiType } from './pii-filter.js'
 export { sanitizeInput, normalizeInput, setGuardrailConfig, getGuardrailConfig } from './input-sanitizer.js'
 export type { SanitizeResult, SanitizeViolation, BedrockGuardrailConfig } from './input-sanitizer.js'
