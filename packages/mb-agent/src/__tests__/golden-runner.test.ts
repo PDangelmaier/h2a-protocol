@@ -314,14 +314,11 @@ describe('SPEC-011: Golden Test Runner', () => {
   })
 
   describe('AC-5: activateModel requires eval_score or override_reason', () => {
-    it('model-config.ts enforces eval_score or override_reason (source-level)', async () => {
-      const fs = await import('node:fs')
-      const src = fs.readFileSync(
-        new URL('../model-config.ts', import.meta.url),
-        'utf-8',
-      )
-      expect(src).toContain('eval_score or non-empty override_reason')
-      expect(src).toContain('Activation requires eval_score')
+    it('activateModel rejects without eval_score or override_reason (behavioral)', async () => {
+      const { activateModel } = await import('../model-config.js')
+      const mockSb = { from: vi.fn().mockReturnValue({ update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }), select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: null, error: null }) }) }) }) } as any
+      await expect(activateModel('claude-sonnet-5-5', 'chat', { evalScore: null, overrideReason: null, activatedBy: 'test' }, mockSb))
+        .rejects.toThrow(/eval_score/)
     })
   })
 
