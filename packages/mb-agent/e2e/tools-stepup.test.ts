@@ -127,7 +127,25 @@ describe.skipIf(skip)('SPEC-046: Tools, Step-Up & Identität', { timeout: 60_000
 
   // ── AC-2: Step-Up für high/critical risk Tools ──
 
+  async function raiseToolPruningMax() {
+    await supabase
+      .from('cost_gate_config')
+      .update({ value: 30 })
+      .eq('key', 'tool_pruning_max')
+    invalidateAllCaches()
+  }
+
+  async function restoreToolPruningMax() {
+    await supabase
+      .from('cost_gate_config')
+      .update({ value: 8 })
+      .eq('key', 'tool_pruning_max')
+    invalidateAllCaches()
+  }
+
   it('AC-2: High-risk Tool ohne Identifizierung → step_up_required', async () => {
+    await raiseToolPruningMax()
+
     await supabase
       .from('customer_profiles')
       .update({ pid_score: 90 })
@@ -138,8 +156,8 @@ describe.skipIf(skip)('SPEC-046: Tools, Step-Up & Identität', { timeout: 60_000
       .update({ channel: 'app', auth_tier: 'anonymous' })
       .eq('id', fixture.dbId)
 
-    await supabase.from('customer_consents').insert({
-      profile_id: fixture.profileId,
+    await supabase.from('consent_records').insert({
+      customer_id: fixture.profileId,
       consent_type: 'vehicle_control',
       granted: true,
     })
@@ -170,10 +188,13 @@ describe.skipIf(skip)('SPEC-046: Tools, Step-Up & Identität', { timeout: 60_000
     const data = toolResultContent.toolResult.content[0].json.data
     expect(data.errorType).toBe('step_up_required')
 
-    await supabase.from('customer_consents').delete().eq('profile_id', fixture.profileId)
+    await supabase.from('consent_records').delete().eq('customer_id', fixture.profileId)
+    await restoreToolPruningMax()
   })
 
   it('AC-2b: High-risk Tool MIT Identifizierung → Ausführung', async () => {
+    await raiseToolPruningMax()
+
     await supabase
       .from('customer_profiles')
       .update({ pid_score: 90 })
@@ -189,8 +210,8 @@ describe.skipIf(skip)('SPEC-046: Tools, Step-Up & Identität', { timeout: 60_000
       })
       .eq('id', fixture.dbId)
 
-    await supabase.from('customer_consents').insert({
-      profile_id: fixture.profileId,
+    await supabase.from('consent_records').insert({
+      customer_id: fixture.profileId,
       consent_type: 'vehicle_control',
       granted: true,
     })
@@ -222,7 +243,8 @@ describe.skipIf(skip)('SPEC-046: Tools, Step-Up & Identität', { timeout: 60_000
     expect(data.errorType).toBeUndefined()
     expect(data.status).toBe('locked')
 
-    await supabase.from('customer_consents').delete().eq('profile_id', fixture.profileId)
+    await supabase.from('consent_records').delete().eq('customer_id', fixture.profileId)
+    await restoreToolPruningMax()
   })
 
   // ── AC-7: Bedrock-konforme Tool-Namen + nicht angebotene Tools ──

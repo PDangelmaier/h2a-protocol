@@ -4,6 +4,7 @@ import { invalidateModelCache, invalidatePricingCache } from '../src/model-confi
 import { clearConsentCache } from '../src/consent.js'
 import { invalidatePromptCacheConfig } from '../src/prompt-cache.js'
 import { invalidateRoutingConfig } from '../src/turn-classifier.js'
+import { invalidatePruningConfig } from '../src/tool-pruning.js'
 import type { HandlerEnv } from '../src/handler.js'
 
 export const E2E_SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? ''
@@ -61,6 +62,7 @@ export function invalidateAllCaches() {
   clearConsentCache()
   invalidatePromptCacheConfig()
   invalidateRoutingConfig()
+  invalidatePruningConfig()
 }
 
 export async function cleanupSession(supabase: SupabaseClient, fixture: SessionFixture) {
