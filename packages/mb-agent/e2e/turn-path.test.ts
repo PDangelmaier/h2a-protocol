@@ -314,6 +314,56 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(costUsd).toBeCloseTo(expectedCost, 6)
   })
 
+  it('A1-Fix: Background-Calls buchen mit eigenem Purpose-Preis, nicht main', async () => {
+    const { data: mainModel } = await supabase
+      .from('model_config')
+      .select('cost_per_input_1k, cost_per_output_1k')
+      .eq('purpose', 'main')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+      .limit(1)
+      .single()
+
+    const { data: bgModel } = await supabase
+      .from('model_config')
+      .select('cost_per_input_1k, cost_per_output_1k')
+      .eq('purpose', 'memory-extraction')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+      .limit(1)
+      .single()
+
+    expect(mainModel).toBeDefined()
+    expect(bgModel).toBeDefined()
+    expect(Number(mainModel!.cost_per_input_1k)).not.toBe(Number(bgModel!.cost_per_input_1k))
+
+    await supabase.from('sessions').update({ cost_usd: 0, nexus_call_count: 0 }).eq('id', fixture.dbId)
+
+    nexus.enqueueText('Guten Tag!')
+    enqueueBackgroundResponses()
+    invalidateAllCaches()
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    const mainReqs = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const bgReqs = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
+    expect(mainReqs.length).toBe(1)
+    expect(bgReqs.length).toBe(2)
+
+    const { data: sessionRow } = await supabase
+      .from('sessions')
+      .select('cost_usd')
+      .eq('id', fixture.dbId)
+      .single()
+
+    const costUsd = Number(sessionRow!.cost_usd)
+    const mainCost = (100 * Number(mainModel!.cost_per_input_1k) + 50 * Number(mainModel!.cost_per_output_1k)) / 1000
+    const bgCost = (100 * Number(bgModel!.cost_per_input_1k) + 50 * Number(bgModel!.cost_per_output_1k)) / 1000
+    const expectedTotal = mainCost + 2 * bgCost
+    expect(costUsd).toBeCloseTo(expectedTotal, 6)
+  })
+
   it('SPEC-045 AC-1: Session über Kostenlimit → 0 Nexus-Aufrufe', async () => {
     const { data: configRows } = await supabase
       .from('cost_gate_config')

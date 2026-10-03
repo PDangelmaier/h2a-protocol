@@ -286,14 +286,16 @@ export async function resolveModelPricing(
 export async function resolveModelPricingByModelId(
   modelId: string,
   supabase: SupabaseClient,
+  purpose?: ModelPurpose,
 ): Promise<ModelPricing | null> {
-  const { data } = await supabase
+  let query = supabase
     .from('model_config')
     .select('purpose, model_id, cost_per_input_1k, cost_per_output_1k, cost_per_cached_input_1k')
     .eq('model_id', modelId)
-    .limit(1)
-    .maybeSingle()
+  if (purpose) query = query.eq('purpose', purpose)
+  query = query.eq('is_active', true).order('fallback_priority', { ascending: true }).limit(1)
 
+  const { data } = await query.maybeSingle()
   if (!data) return null
 
   const row = data as { purpose: ModelPurpose; model_id: string; cost_per_input_1k: number | null; cost_per_output_1k: number | null; cost_per_cached_input_1k: number | null }
