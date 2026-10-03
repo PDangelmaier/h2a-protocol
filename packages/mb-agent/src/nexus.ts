@@ -11,6 +11,7 @@ export interface NexusRequest {
   messages: Array<{ role: string; content: Array<{ text: string }> }>
   inferenceConfig: { temperature: number; maxTokens: number }
   toolConfig?: { tools: Array<{ toolSpec: { name: string; description: string; inputSchema: { json: Record<string, unknown> } } }> }
+  guardrailConfig?: { guardrailIdentifier: string; guardrailVersion: string }
 }
 
 interface StreamEvent {
@@ -42,6 +43,7 @@ export async function callNexusStream(
     messages: request.messages,
     inferenceConfig: request.inferenceConfig,
     ...(request.toolConfig ? { toolConfig: request.toolConfig } : {}),
+    ...(request.guardrailConfig ? { guardrailConfig: request.guardrailConfig } : {}),
   }
 
   const response = await fetch(url, {
@@ -72,6 +74,7 @@ export async function callNexusSync(
     messages: request.messages,
     inferenceConfig: request.inferenceConfig,
     ...(request.toolConfig ? { toolConfig: request.toolConfig } : {}),
+    ...(request.guardrailConfig ? { guardrailConfig: request.guardrailConfig } : {}),
   }
 
   const response = await fetch(url, {
