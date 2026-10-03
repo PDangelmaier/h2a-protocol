@@ -314,6 +314,36 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(costUsd).toBeCloseTo(expectedCost, 6)
   })
 
+  it('SPEC-045 AC-1: Session über Kostenlimit → 0 Nexus-Aufrufe', async () => {
+    const { data: configRows } = await supabase
+      .from('cost_gate_config')
+      .select('key, value')
+      .in('key', ['cost_limit_eur', 'usd_eur_rate'])
+
+    const config = new Map(
+      (configRows ?? []).map((r: { key: string; value: number }) => [r.key, Number(r.value)]),
+    )
+    const limitEur = config.get('cost_limit_eur') ?? 0.5
+    const rate = config.get('usd_eur_rate') ?? 0.92
+    const overLimitUsd = (limitEur / rate) + 1.0
+
+    await supabase
+      .from('sessions')
+      .update({ cost_usd: overLimitUsd })
+      .eq('id', fixture.dbId)
+
+    nexus.enqueueText('This should never be reached')
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    expect(nexus.requests.length).toBe(0)
+
+    const degradedEvent = events.find(e => e.type === 'degraded_response')
+    expect(degradedEvent).toBeDefined()
+    expect(degradedEvent!.reason).toBe('cost_limit')
+  })
+
   it('AC-7: Fehler ohne Fallback → degradierte SSE-Antwort + backgroundTasks', async () => {
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')

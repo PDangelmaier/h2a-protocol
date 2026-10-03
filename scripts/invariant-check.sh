@@ -39,6 +39,20 @@ else
   echo "ok"
 fi
 
+# INV-45: No direct Nexus calls outside nexus-gateway.ts (SPEC-045 AC-1)
+echo -n "INV-45 (single Nexus wrapper)... "
+ALLOWED_PATTERN='(nexus-gateway\.ts|fallback\.ts|prompt-cache\.ts|nexus\.ts)'
+if grep -rn --include="*.ts" -E '\b(callNexusSync|callNexusStream|callWithFallback|callWithCacheFallback)\b' packages/mb-agent/src/ \
+  | grep -v node_modules | grep -v __tests__ | grep -v '.d.ts' \
+  | grep -v -E "$ALLOWED_PATTERN" \
+  | grep -v 'import.*type' \
+  | grep -v '^.*index\.ts:.*export '; then
+  echo "FAIL: Direct Nexus calls outside nexus-gateway.ts"
+  FAIL=1
+else
+  echo "ok"
+fi
+
 # INV-22: No .env files committed, no NEXUS_BEARER_TOKEN
 echo -n "INV-22 (no secrets)... "
 ENV_FILES=$(git ls-files | grep -E '^\.env' || true)

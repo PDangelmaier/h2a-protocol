@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { MemoryType, NexusConfig } from './types.js'
 import { resolveModel, resolveFallbackChain } from './model-config.js'
-import { callWithFallback } from './fallback.js'
-import { trackNexusCost, checkCostLimit } from './cost-gate.js'
+import { checkCostLimit } from './cost-gate.js'
+import { callNexusFallbackGated } from './nexus-gateway.js'
 
 const MAX_ACTIVE_MEMORIES = 50
 const RECENT_SESSION_WINDOW = 3
@@ -107,8 +107,7 @@ export async function extractMemories(
     inferenceConfig: { temperature: 0.1, maxTokens: 1024 },
   }
 
-  const fbResult = await callWithFallback(request, fallbackChain, nexusConfig, 'memory-extraction')
-  await trackNexusCost(sessionId, 'memory-extraction', fbResult, supabase, fbResult.actualModelId)
+  const fbResult = await callNexusFallbackGated(request, fallbackChain, nexusConfig, 'memory-extraction', sessionId, supabase)
 
   let parsed: unknown
   try {

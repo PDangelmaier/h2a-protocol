@@ -35,7 +35,7 @@ export async function trackNexusCost(
   actualModelId?: string,
 ): Promise<CostTrackResult> {
   const pricing = actualModelId
-    ? await resolveModelPricingByModelId(actualModelId, supabase)
+    ? (await resolveModelPricingByModelId(actualModelId, supabase)) ?? (await resolveModelPricing(purpose, supabase))
     : await resolveModelPricing(purpose, supabase)
   const cachedTokens = result.cacheReadInputTokens ?? 0
   const uncachedInputTokens = result.inputTokens - cachedTokens

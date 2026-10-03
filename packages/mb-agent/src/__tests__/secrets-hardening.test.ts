@@ -9,7 +9,7 @@ describe('SPEC-037: Secrets Hardening', () => {
   describe('AC-1: Doppler names only', () => {
     const OLD_TOKEN_NAME = ['NEXUS', 'BEARER', 'TOKEN'].join('_')
 
-    it('old token name does not appear in production code', () => {
+    it('old token name does not appear in production code', { timeout: 15_000 }, () => {
       const result = execSync(
         `grep -rn "${OLD_TOKEN_NAME}" --include="*.ts" --include="*.js" --include="*.yml" --include="*.json" ${REPO_ROOT} 2>/dev/null | grep -v node_modules | grep -v '.git/' | grep -v 'secrets-hardening.test' || true`,
         { encoding: 'utf-8' },
