@@ -473,6 +473,70 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     }
   })
 
+  it('SPEC-045 AC-5a: 20 gleichzeitige Buchungen → exakte Summe', async () => {
+    const costPerCall = 0.001
+    const concurrency = 20
+
+    await supabase
+      .from('sessions')
+      .update({ cost_usd: 0, nexus_call_count: 0, input_tokens_total: 0 })
+      .eq('id', fixture.dbId)
+
+    const promises = Array.from({ length: concurrency }, () =>
+      supabase.rpc('increment_session_cost', {
+        p_session_id: fixture.sessionId,
+        p_cost_delta: costPerCall,
+        p_input_tokens: 100,
+      }),
+    )
+
+    const results = await Promise.all(promises)
+    for (const r of results) {
+      expect(r.error).toBeNull()
+    }
+
+    const { data: sessionRow } = await supabase
+      .from('sessions')
+      .select('cost_usd, nexus_call_count, input_tokens_total')
+      .eq('id', fixture.dbId)
+      .single()
+
+    const expectedCost = costPerCall * concurrency
+    expect(Number(sessionRow!.cost_usd)).toBeCloseTo(expectedCost, 6)
+    expect(sessionRow!.nexus_call_count).toBe(concurrency)
+    expect(Number(sessionRow!.input_tokens_total)).toBe(100 * concurrency)
+  })
+
+  it('SPEC-045 AC-5b: Buchung für nicht-existente Session → leere Rückgabe', async () => {
+    const { data, error } = await supabase.rpc('increment_session_cost', {
+      p_session_id: 'nonexistent-session-id',
+      p_cost_delta: 0.001,
+      p_input_tokens: 50,
+    })
+
+    expect(error).toBeNull()
+    expect(data).toEqual([])
+  })
+
+  it('SPEC-045 AC-5c: Rückgabewert enthält aktualisierte Felder', async () => {
+    await supabase
+      .from('sessions')
+      .update({ cost_usd: 0.01, nexus_call_count: 5, input_tokens_total: 500 })
+      .eq('id', fixture.dbId)
+
+    const { data, error } = await supabase.rpc('increment_session_cost', {
+      p_session_id: fixture.sessionId,
+      p_cost_delta: 0.002,
+      p_input_tokens: 100,
+    })
+
+    expect(error).toBeNull()
+    const row = (data as Array<{ cost_usd: number; nexus_call_count: number; input_tokens_total: number }>)[0]
+    expect(Number(row.cost_usd)).toBeCloseTo(0.012, 6)
+    expect(row.nexus_call_count).toBe(6)
+    expect(Number(row.input_tokens_total)).toBe(600)
+  })
+
   it('AC-7: Fehler ohne Fallback → degradierte SSE-Antwort + backgroundTasks', async () => {
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')

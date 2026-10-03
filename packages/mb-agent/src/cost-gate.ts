@@ -55,7 +55,11 @@ export async function trackNexusCost(
     throw new Error(`Cost tracking failed for session "${sessionId}": ${error.message}`)
   }
 
-  const row = data as { cost_usd: number; nexus_call_count: number }
+  const rows = data as Array<{ cost_usd: number; nexus_call_count: number }> | { cost_usd: number; nexus_call_count: number }
+  const row = Array.isArray(rows) ? rows[0] : rows
+  if (!row) {
+    throw new Error(`Cost tracking failed: session "${sessionId}" not found`)
+  }
   return {
     costUsd,
     totalCostUsd: Number(row.cost_usd),
