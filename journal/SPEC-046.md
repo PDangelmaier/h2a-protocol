@@ -4,8 +4,8 @@ spec_version: 1
 status: REVIEW
 branch: feature/spec-046-tools-stepup-identity
 base_commit: 82b6068
-head_commit: f18ee65
-last_updated: 2026-10-03T12:01:16+02:00
+head_commit: 7525691
+last_updated: 2026-10-03T17:32:27+02:00
 ---
 
 ## Spec-Check
@@ -74,6 +74,41 @@ last_updated: 2026-10-03T12:01:16+02:00
 
 ## Test-Lauf
 
+### E2E (frische DB, 2026-10-03T17:30+02:00)
+```
+$ E2E_SUPABASE_URL=http://127.0.0.1:5497 E2E_SUPABASE_SERVICE_KEY=... pnpm --filter mb-agent exec vitest run --reporter=verbose e2e/
+
+ ✓ e2e/turn-path.test.ts > SPEC-043: Turn-Pfad E2E > AC-1: Suite läuft gegen echte PostgreSQL 152ms
+ ✓ e2e/turn-path.test.ts > AC-1b: session.open über handleRequest 66ms
+ ✓ e2e/turn-path.test.ts > AC-1c: session.open → stream auf neuer Session 247ms
+ ✓ e2e/turn-path.test.ts > AC-2: Einfacher Turn — SSE-Events + DB-Einträge 88ms
+ ✓ e2e/turn-path.test.ts > AC-3: Turn mit Tool — vehicle_catalog 113ms
+ ✓ e2e/turn-path.test.ts > AC-3b: Tool mit fehlendem Consent — configurator blockiert 61ms
+ ✓ e2e/turn-path.test.ts > AC-4: Zweiter Turn — History 136ms
+ ✓ e2e/turn-path.test.ts > AC-5: Kostenlimit — degradierte SSE-Antwort 54ms
+ ✓ e2e/turn-path.test.ts > AC-6: Modell-Fallback — 503 Sonnet → Haiku 54ms
+ ✓ e2e/turn-path.test.ts > AC-7: Fehler ohne Fallback → degradierte SSE-Antwort 54ms
+ ✓ e2e/turn-path.test.ts > AC-8: Kaputtes JSON → degradierte SSE-Antwort 10ms
+ ✓ e2e/turn-path.test.ts > AC-8b: Ungültige Session-ID → invalid_session 17ms
+ ✓ e2e/turn-path.test.ts > AC-9: session.open → stream mit Session-ID 88ms
+ ✓ e2e/turn-path.test.ts > AC-10: Tool mit erteiltem Consent — configurator erlaubt 84ms
+ ✓ e2e/turn-path.test.ts > AC-11: Presence conversing-Event vor erstem Text-Frame 57ms
+ ✓ e2e/turn-path.test.ts > F6-a: Tool-Pruning — min_pid_score filtert Tools 76ms
+ ✓ e2e/turn-path.test.ts > F6-b: DB-Zustand nach Stream-Ende 60ms
+ ✓ e2e/turn-path.test.ts > F6-c: en-Session — degraded text in English 46ms
+ ✓ e2e/tools-stepup.test.ts > AC-1: Tool-Endpoint Timeout → tool_error timeout 5418ms
+ ✓ e2e/tools-stepup.test.ts > AC-1b: Tool-Executor mit erfolgreicher Antwort 72ms
+ ✓ e2e/tools-stepup.test.ts > AC-2: High-risk Tool ohne Identifizierung → step_up_required 96ms
+ ✓ e2e/tools-stepup.test.ts > AC-2b: High-risk Tool MIT Identifizierung → Ausführung 75ms
+ ✓ e2e/tools-stepup.test.ts > AC-7: Nicht angebotenes Tool → not_offered 58ms
+ ✓ e2e/tools-stepup.test.ts > AC-7b: sanitizedError ohne URLs/Tokens 64ms
+
+ Test Files  2 passed (2)
+      Tests  24 passed (24)
+   Duration  6.50s
+```
+
+### Unit Tests
 ```
 $ pnpm --filter mb-agent test -- --reporter=verbose
  Test Files  46 passed (46)
@@ -112,9 +147,13 @@ Keine Änderungen außerhalb scope_paths.
 
 ## Commits
 
-Noch nicht committed — alle Änderungen unstaged auf `feature/spec-046-tools-stepup-identity`.
+- `98c1754` feat(SPEC-046): Tools Step-Up & Identität — 7 ACs implementiert
+- `91f602e` fix(SPEC-046): align test types after SPEC-043/045 rebase
+- `7525691` fix(SPEC-046): E2E AC-2 — pruning max + consent table
 
 ## Offene Punkte
 
 - `secrets-hardening.test.ts` hat flaky Timeout (grep über großes Repo) — vorbestehend, nicht SPEC-046-bezogen
 - E2E-Tests für AC-3 (anonyme Session) und AC-6 (dreimaliger Loop) erfordern erweiterte Fixtures — minimale Abdeckung über Unit-Tests und indirekte E2E-Ketten gegeben
+- E2E AC-2/AC-2b benötigen `tool_pruning_max=30` (statt 8) weil vehicle.remote_control auf Position 15 von 24 Tools liegt und bei max=8 abgeschnitten wird. Fix-Commit `7525691` setzt den Wert temporär hoch und stellt ihn danach wieder her.
+- E2E AC-2/AC-2b korrigiert: `consent_records` Tabelle + `customer_id` FK (statt nicht-existenter `customer_consents` + `profile_id`)
