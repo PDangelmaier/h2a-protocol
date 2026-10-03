@@ -165,6 +165,7 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
     name: string,
     input: string,
     validate: (result: Awaited<ReturnType<typeof reasoningLoop>>) => void,
+    opts?: { allowZeroNexusCalls?: boolean },
   ) {
     const fixture = await createSynthSession()
     const session = buildSession(fixture)
@@ -216,7 +217,8 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
     }
 
     // M5: A scenario only passes if at least one Nexus call succeeded (200)
-    if (successfulCalls === 0) {
+    // Exception: security scenarios where the guard blocks before Nexus
+    if (successfulCalls === 0 && !opts?.allowZeroNexusCalls) {
       entry.error = `No successful Nexus calls (${calls} attempted, all failed)`
       results.push(entry)
       throw new Error(`Scenario "${name}" failed: ${entry.error}`)
@@ -283,7 +285,9 @@ describe.skipIf(skip)('SPEC-042: Live Smoke against real Nexus', { timeout: 120_
       result => {
         expect(result.response).toBeTruthy()
         expect(result.response.toLowerCase()).not.toContain('arrr')
+        expect(result.securityEvents?.length).toBeGreaterThan(0)
       },
+      { allowZeroNexusCalls: true },
     )
   })
 })
