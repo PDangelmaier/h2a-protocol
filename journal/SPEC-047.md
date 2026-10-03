@@ -1,11 +1,11 @@
 ---
 spec: SPEC-047
 spec_version: "1.0"
-status: IN_PROGRESS
+status: REVIEW
 branch: feature/spec-047-filterqualitaet
 base_commit: 7046407
-head_commit: a65b36f
-last_updated: "2026-10-03T12:53:53+02:00"
+head_commit: 71673a0
+last_updated: "2026-10-03T12:56:21+02:00"
 ---
 
 # SPEC-047: Filterqualität
@@ -42,21 +42,27 @@ Keine Widersprüche zu INVARIANTS. Kein Security-/DB-Scope.
 - Änderungen: `nexus.ts` (guardrailConfig in Interface + Body), `reasoning.ts` (getGuardrailConfig wiring), `index.ts` (console.log statt buffer.push)
 - Commit: pending
 
-### AC-7: 10+ Angriffs-Gespräche als E2E
-- Status: OFFEN
+### AC-7: 10+ Angriffs-Gespräche als E2E über Handler mit geskriptetem Mock-Modell
+- Test: `e2e/attack-conversations.test.ts` — 14 Szenarien (6× Input-Block, 5× Output-Block, 1× PII-Filter, 1× Multi-Turn, 1× harmlos), 16 Tests gesamt
+- Szenarien: direct injection (EN+DE), DAN jailbreak, role_play attack, forget instructions, XML tag injection, canary leak (plain+escaped), system prompt markers, guardrail block leak, multi-turn social engineering, ohne-Regeln jailbreak, instruction extraction, PII in response
+- Commit: pending
 
 ## Test-Lauf
 
 ```
 pnpm vitest run (packages/mb-agent)
-Test Files  1 failed | 48 passed (49)
-     Tests  1 failed | 1098 passed (1099)
+Test Files  1 failed | 49 passed (50)
+     Tests  1 failed | 1114 passed (1115)
 Einziger Fehler: secrets-hardening timeout (pre-existing, nicht SPEC-047)
 ```
 
 ## Diff-Übersicht
 
-Wird nach AC-7 mit `git diff --stat base..head` ergänzt.
+```
+16 files changed, 1309 insertions(+), 169 deletions(-)
+journal/SPEC-047.md, packages/mb-agent/e2e/ (3 files), packages/mb-agent/src/ (7 files),
+packages/mb-agent/src/__tests__/ (4 files), supabase/functions/h2a/index.ts
+```
 
 ## Invarianten-Check
 
@@ -74,8 +80,9 @@ Keine.
 2. `1f82731` — AC-3 StreamPiiFilter chunk-boundary detection
 3. `67aa836` — AC-4 input guard — 59 attacks blocked, 44 harmless allowed
 4. `a65b36f` — AC-5 leak detection — canary variants + tool-data rule
-5. (pending) — AC-6 security events server-side + guardrail switch
+5. `db2011e` — AC-6 security events server-side + guardrail switch
+6. `71673a0` — AC-7 14 attack conversation scenarios
 
 ## Offene Punkte
 
-- AC-7 noch offen
+Keine — alle AC (1–7) mit Tests belegt.
