@@ -30,20 +30,23 @@ const SOFT_TOKEN_LIMIT = 8_000
 export async function trackNexusCost(
   sessionId: string,
   purpose: ModelPurpose,
-  result: Pick<NexusStreamResult, 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens'>,
+  result: Pick<NexusStreamResult, 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens' | 'cacheWriteInputTokens'>,
   supabase: SupabaseClient,
   actualModelId?: string,
 ): Promise<CostTrackResult> {
   const pricing = actualModelId
     ? (await resolveModelPricingByModelId(actualModelId, supabase)) ?? (await resolveModelPricing(purpose, supabase))
     : await resolveModelPricing(purpose, supabase)
-  const cachedTokens = result.cacheReadInputTokens ?? 0
-  const uncachedInputTokens = result.inputTokens - cachedTokens
-  const costUsd =
+  const cacheReadTokens = result.cacheReadInputTokens ?? 0
+  const cacheWriteTokens = result.cacheWriteInputTokens ?? 0
+  const uncachedInputTokens = Math.max(0, result.inputTokens - cacheReadTokens - cacheWriteTokens)
+  const CACHE_WRITE_MULTIPLIER = 1.25
+  const costUsd = Math.max(0,
     (uncachedInputTokens * pricing.costPerInput1k +
-      cachedTokens * pricing.costPerCachedInput1k +
+      cacheReadTokens * pricing.costPerCachedInput1k +
+      cacheWriteTokens * pricing.costPerInput1k * CACHE_WRITE_MULTIPLIER +
       result.outputTokens * pricing.costPerOutput1k) /
-    1000
+    1000)
 
   const { data, error } = await supabase.rpc('increment_session_cost', {
     p_session_id: sessionId,

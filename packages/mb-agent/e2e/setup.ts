@@ -84,7 +84,7 @@ interface NexusSyncResponse {
     }
   }
   stopReason: string
-  usage: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }
+  usage: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number; cacheWriteInputTokens?: number }
 }
 
 export interface NexusMock {

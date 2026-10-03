@@ -18,7 +18,7 @@ import { buildDegradedResponse, formatDegradedForCustomer } from './degradation.
 import type { DegradationReason } from './degradation.js'
 import { buildCanary, injectCanary, validateOutput } from './output-validator.js'
 import { checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
-import { loadPromptCacheConfig, applyCacheToRequest } from './prompt-cache.js'
+import { loadPromptCacheConfig, applyCacheToRequest, removeCacheMarkers } from './prompt-cache.js'
 import { callNexusGated, CostLimitExceededError } from './nexus-gateway.js'
 import { pruneTools, loadPruningConfig } from './tool-pruning.js'
 import { loadToolStatusMessages, buildStatusEvent } from './tool-status.js'
@@ -75,6 +75,10 @@ interface ReasoningResult {
 
 export class ClientDisconnectedError extends Error {
   constructor() { super('Client disconnected') }
+}
+
+function fullSystemText(request: NexusRequest): string {
+  return request.system.filter(b => b.text).map(b => b.text!).join('\n\n')
 }
 
 export async function reasoningLoop(
@@ -415,7 +419,7 @@ async function processResponse(
     }
 
     const estimate = estimateInputTokens(
-      currentRequest.system[0]?.text ?? '',
+      fullSystemText(currentRequest),
       currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
       currentRequest.toolConfig,
     )
@@ -425,7 +429,10 @@ async function processResponse(
       currentRequest, fallbackChain, nexusConfig, 'main',
       sessionId, locale, supabase, { skipPreCheck: round > 0 },
     )
-    if (cacheRejected) trackPromptCacheRejected(sessionId).catch(() => {})
+    if (cacheRejected) {
+      trackPromptCacheRejected(sessionId).catch(() => {})
+      currentRequest = removeCacheMarkers(currentRequest)
+    }
 
     if (fbResult.stopReason !== 'tool_use' || fbResult.toolCalls.length === 0) {
       return { text: fbResult.text, toolsUsed, newMemories }
@@ -490,7 +497,7 @@ async function processResponse(
         ],
       }
       const abortEstimate = estimateInputTokens(
-        currentRequest.system[0]?.text ?? '',
+        fullSystemText(currentRequest),
         currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
         currentRequest.toolConfig,
       )
@@ -513,7 +520,7 @@ async function processResponse(
   }
 
   const finalEstimate = estimateInputTokens(
-    currentRequest.system[0]?.text ?? '',
+    fullSystemText(currentRequest),
     currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
     currentRequest.toolConfig,
   )
