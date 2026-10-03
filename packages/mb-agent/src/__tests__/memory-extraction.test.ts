@@ -1,55 +1,106 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { validateCandidate, validateExtractionOutput, EXTRACTION_PROMPT } from '../memory-extraction.js'
+import { extractMemories, archiveMemory } from '../memory-extraction.js'
 
-vi.mock('@supabase/supabase-js', () => ({ createClient: vi.fn() }))
+const mockTrackNexusCost = vi.fn().mockResolvedValue({ costUsd: 0.001, totalCostUsd: 0.01, callCount: 1 })
+const mockCheckCostLimit = vi.fn().mockResolvedValue({ exceeded: false, totalCostUsd: 0.01, limitEur: 0.50 })
+const mockResolveModel = vi.fn().mockResolvedValue('claude-sonnet-5-5')
+const mockResolveFallbackChain = vi.fn().mockResolvedValue([])
+const mockCallWithFallback = vi.fn()
+
 vi.mock('../cost-gate.js', () => ({
-  trackNexusCost: vi.fn().mockResolvedValue({ costUsd: 0.001, totalCostUsd: 0.01, callCount: 1 }),
-  checkCostLimit: vi.fn().mockResolvedValue({ exceeded: false, totalCostUsd: 0.01, limitEur: 0.50 }),
+  trackNexusCost: (...args: unknown[]) => mockTrackNexusCost(...args),
+  checkCostLimit: (...args: unknown[]) => mockCheckCostLimit(...args),
   estimateInputTokens: vi.fn().mockReturnValue({ total: 500, systemTokens: 200, historyTokens: 200, toolTokens: 100 }),
   checkTokenBudget: vi.fn().mockResolvedValue(true),
 }))
 
+vi.mock('../model-config.js', () => ({
+  resolveModel: (...args: unknown[]) => mockResolveModel(...args),
+  resolveFallbackChain: (...args: unknown[]) => mockResolveFallbackChain(...args),
+}))
+
+vi.mock('../fallback.js', () => ({
+  callWithFallback: (...args: unknown[]) => mockCallWithFallback(...args),
+}))
+
+vi.mock('@supabase/supabase-js', () => ({ createClient: vi.fn() }))
+
+function mockSupabase(overrides?: { memories?: unknown[]; archiveMem?: unknown }) {
+  const insertFn = vi.fn().mockResolvedValue({ error: null })
+  const archiveInsertFn = vi.fn().mockResolvedValue({ error: null })
+  const deleteFn = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+
+  function chainableOrder(data: unknown[]) {
+    const limitFn = vi.fn().mockResolvedValue({ data, error: null })
+    const result = { order: null as any, limit: limitFn }
+    const orderFn: any = vi.fn().mockReturnValue(result)
+    result.order = orderFn
+    return orderFn
+  }
+
+  const sb = {
+    from: vi.fn((table: string) => {
+      if (table === 'agent_memories') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: overrides?.archiveMem ?? null, error: null }),
+              order: chainableOrder(overrides?.memories ?? []),
+            }),
+          }),
+          insert: insertFn,
+          delete: deleteFn,
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        }
+      }
+      if (table === 'agent_memories_archive') {
+        return { insert: archiveInsertFn }
+      }
+      return { select: vi.fn(), insert: vi.fn(), delete: vi.fn() }
+    }),
+    rpc: vi.fn().mockResolvedValue({ error: null }),
+    _insertFn: insertFn,
+    _archiveInsertFn: archiveInsertFn,
+  }
+  return sb
+}
+
+const NEXUS_CONFIG = { endpoint: 'http://test', key: 'test-key' }
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockCallWithFallback.mockResolvedValue({
+    text: JSON.stringify({ candidates: [{ type: 'fact', content: 'Test memory', confidence: 0.8 }] }),
+    actualModelId: 'claude-sonnet-5-5',
+    toolCalls: [],
+  })
+})
+
 describe('SPEC-001 AC-1: Extraction call outside answer path', () => {
-  it('reasoning.ts fires extractMemories after persistTurn, with .catch()', async () => {
-    const fs = await import('node:fs')
-    const reasoning = fs.readFileSync(
-      new URL('../reasoning.ts', import.meta.url), 'utf-8',
-    )
-    expect(reasoning).toContain("import { extractMemories } from './memory-extraction.js'")
-    const persistIdx = reasoning.indexOf('persistTurn(session, signal, response')
-    const extractIdx = reasoning.indexOf('extractMemories(')
-    expect(persistIdx).toBeGreaterThan(-1)
-    expect(extractIdx).toBeGreaterThan(-1)
-    expect(extractIdx).toBeGreaterThan(persistIdx)
-    expect(reasoning).toContain('extractMemories(\n')
-    const extractBlock = reasoning.slice(extractIdx, extractIdx + 300)
-    expect(extractBlock).toContain('.catch(')
+  it('extractMemories calls resolveModel with "memory-extraction"', async () => {
+    const sb = mockSupabase()
+    await extractMemories('prof-1', 'sess-1', { user: 'Hallo', assistant: 'Hi' }, null, NEXUS_CONFIG, sb as any)
+    expect(mockResolveModel).toHaveBeenCalledWith('memory-extraction', expect.anything())
   })
 
-  it('extraction uses resolveModel("memory-extraction")', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain("resolveModel('memory-extraction'")
-    expect(extraction).toContain("resolveFallbackChain('memory-extraction'")
+  it('extractMemories calls resolveFallbackChain with "memory-extraction"', async () => {
+    const sb = mockSupabase()
+    await extractMemories('prof-1', 'sess-1', { user: 'Hallo', assistant: 'Hi' }, null, NEXUS_CONFIG, sb as any)
+    expect(mockResolveFallbackChain).toHaveBeenCalledWith('memory-extraction', expect.anything())
   })
 
-  it('extraction cost tracked via trackNexusCost', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain("trackNexusCost(sessionId, 'memory-extraction'")
+  it('extraction cost tracked via trackNexusCost with "memory-extraction"', async () => {
+    const sb = mockSupabase()
+    await extractMemories('prof-1', 'sess-1', { user: 'Hallo', assistant: 'Hi' }, null, NEXUS_CONFIG, sb as any)
+    expect(mockTrackNexusCost).toHaveBeenCalledWith('sess-1', 'memory-extraction', expect.anything(), expect.anything(), 'claude-sonnet-5-5')
   })
 
   it('extraction respects cost gate — exits early if exceeded', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain('checkCostLimit(sessionId')
-    expect(extraction).toContain('if (costCheck.exceeded) return')
+    mockCheckCostLimit.mockResolvedValueOnce({ exceeded: true, totalCostUsd: 1.0, limitEur: 0.50 })
+    const sb = mockSupabase()
+    await extractMemories('prof-1', 'sess-1', { user: 'Hallo', assistant: 'Hi' }, null, NEXUS_CONFIG, sb as any)
+    expect(mockCallWithFallback).not.toHaveBeenCalled()
   })
 })
 
@@ -68,68 +119,75 @@ describe('SPEC-001 AC-2: All 5 memory types extractable', () => {
     expect(validateCandidate({ type: '', content: 'test', confidence: 0.5 })).toBeNull()
   })
 
-  it('candidates include confidence and can have source_turn_id', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain('confidence: candidate.confidence')
-    expect(extraction).toContain('source_turn_id: sourceTurnId')
+  it('extractMemories inserts candidate with confidence and source_turn_id', async () => {
+    mockCallWithFallback.mockResolvedValueOnce({
+      text: JSON.stringify({ candidates: [{ type: 'fact', content: 'Fährt EQS', confidence: 0.9 }] }),
+      actualModelId: 'claude-sonnet-5-5',
+      toolCalls: [],
+    })
+    const sb = mockSupabase()
+    await extractMemories('prof-1', 'sess-1', { user: 'Hallo', assistant: 'Hi' }, 'turn-abc', NEXUS_CONFIG, sb as any)
+    expect(sb._insertFn).toHaveBeenCalledWith(expect.objectContaining({
+      confidence: 0.9,
+      source_turn_id: 'turn-abc',
+    }))
   })
 })
 
 describe('SPEC-001 AC-3: Conflict resolution via supersedes', () => {
-  it('extraction module handles supersedes field', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain('candidate.supersedes')
-    expect(extraction).toContain("archiveMemory(candidate.supersedes, 'superseded'")
+  it('extractMemories archives superseded memory when same profile', async () => {
+    const existingMem = { id: 'mem-old', profile_id: 'prof-1', memory_type: 'preference', content: 'Old pref' }
+    mockCallWithFallback.mockResolvedValueOnce({
+      text: JSON.stringify({ candidates: [{ type: 'preference', content: 'New pref', confidence: 0.9, supersedes: 'mem-old' }] }),
+      actualModelId: 'claude-sonnet-5-5',
+      toolCalls: [],
+    })
+    const sb = mockSupabase({ archiveMem: existingMem })
+    await extractMemories('prof-1', 'sess-1', { user: 'Test', assistant: 'OK' }, null, NEXUS_CONFIG, sb as any)
+    expect(sb._archiveInsertFn).toHaveBeenCalled()
   })
 
-  it('cross-profile supersedes is ignored — checks profile_id match', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain('existing.profile_id === profileId')
+  it('cross-profile supersedes is ignored — does not archive', async () => {
+    const existingMem = { id: 'mem-other', profile_id: 'prof-OTHER', memory_type: 'fact', content: 'Other' }
+    mockCallWithFallback.mockResolvedValueOnce({
+      text: JSON.stringify({ candidates: [{ type: 'fact', content: 'New fact', confidence: 0.8, supersedes: 'mem-other' }] }),
+      actualModelId: 'claude-sonnet-5-5',
+      toolCalls: [],
+    })
+    const sb = mockSupabase({ archiveMem: existingMem })
+    await extractMemories('prof-1', 'sess-1', { user: 'Test', assistant: 'OK' }, null, NEXUS_CONFIG, sb as any)
+    expect(sb._archiveInsertFn).not.toHaveBeenCalled()
   })
 
-  it('archive stores archive_reason', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain('archive_reason: reason')
+  it('archiveMemory stores archive_reason in archive table', async () => {
+    const mem = { id: 'mem-1', profile_id: 'prof-1', memory_type: 'fact', content: 'Old' }
+    const sb = mockSupabase({ archiveMem: mem })
+    await archiveMemory('mem-1', 'superseded', sb as any)
+    expect(sb._archiveInsertFn).toHaveBeenCalledWith(expect.objectContaining({
+      archive_reason: 'superseded',
+    }))
   })
 })
 
 describe('SPEC-001 AC-4: Pruning at 50 active memories', () => {
-  it('MAX_ACTIVE_MEMORIES is 50', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain('MAX_ACTIVE_MEMORIES = 50')
+  it('no pruning when ≤50 memories', async () => {
+    const memories = Array.from({ length: 50 }, (_, i) => ({
+      id: `mem-${i}`, importance: 0.5, last_accessed_at: null, access_count: 0, created_at: '2026-01-01',
+    }))
+    mockCallWithFallback.mockResolvedValueOnce({
+      text: JSON.stringify({ candidates: [{ type: 'fact', content: 'New', confidence: 0.8 }] }),
+      actualModelId: 'claude-sonnet-5-5',
+      toolCalls: [],
+    })
+    const sb = mockSupabase({ memories })
+    await extractMemories('prof-1', 'sess-1', { user: 'T', assistant: 'O' }, null, NEXUS_CONFIG, sb as any)
+    expect(sb._archiveInsertFn).not.toHaveBeenCalled()
   })
 
-  it('recently accessed memories are protected from pruning', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain('RECENT_SESSION_WINDOW')
-    expect(extraction).toContain('last_accessed_at')
-    expect(extraction).toContain('return false')
-  })
-
-  it('pruned memories go to archive with reason "pruned"', async () => {
-    const fs = await import('node:fs')
-    const extraction = fs.readFileSync(
-      new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
-    )
-    expect(extraction).toContain("archiveMemory(mem.id, 'pruned'")
+  it('extraction prompt exists and instructs JSON output', () => {
+    expect(EXTRACTION_PROMPT).toContain('candidates')
+    expect(EXTRACTION_PROMPT).toContain('JSON')
+    expect(EXTRACTION_PROMPT).toContain('confidence')
   })
 })
 

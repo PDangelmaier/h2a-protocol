@@ -53,7 +53,7 @@ docker run -d --name "$CONTAINER_NAME" --network "$DOCKER_NETWORK" \
   -e POSTGRES_USER="$DB_USER" \
   -e POSTGRES_PASSWORD="$DB_PASS" \
   -p "$DB_PORT:5432" \
-  pgvector/pgvector:pg16 \
+  pgvector/pgvector:pg17 \
   -c shared_preload_libraries='' >/dev/null
 
 echo "Waiting for PostgreSQL..."

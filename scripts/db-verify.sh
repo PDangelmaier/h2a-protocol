@@ -30,7 +30,7 @@ docker run -d --name "$CONTAINER_NAME" \
   -e POSTGRES_USER="$DB_USER" \
   -e POSTGRES_PASSWORD="$DB_PASS" \
   -p "$DB_PORT:5432" \
-  pgvector/pgvector:pg16 >/dev/null
+  pgvector/pgvector:pg17 >/dev/null
 
 echo "Waiting for PostgreSQL to be ready..."
 for i in $(seq 1 30); do

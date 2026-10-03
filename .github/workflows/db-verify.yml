@@ -24,7 +24,7 @@ jobs:
             --health-interval 5s \
             --health-timeout 5s \
             --health-retries 10 \
-            pgvector/pgvector:pg16
+            pgvector/pgvector:pg17
           until docker inspect --format='{{.State.Health.Status}}' pg-verify | grep -q healthy; do sleep 2; done
 
       - name: Setup Supabase stubs

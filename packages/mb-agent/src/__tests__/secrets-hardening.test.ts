@@ -17,41 +17,29 @@ describe('SPEC-037: Secrets Hardening', () => {
       expect(result.trim()).toBe('')
     })
 
-    it('Edge Function reads NEXUS_PRD_KEY', () => {
-      const content = readFileSync(resolve(REPO_ROOT, 'supabase/functions/h2a/index.ts'), 'utf-8')
-      expect(content).toContain("NEXUS_PRD_KEY")
-      expect(content).not.toContain(OLD_TOKEN_NAME)
-    })
+    // Source-level checks (NEXUS_PRD_KEY in edge fn) enforced by invariant-check.sh INV-22
   })
 
   describe('AC-2: Startup validation', () => {
-    it('Edge Function checks required env vars at startup', () => {
-      const content = readFileSync(resolve(REPO_ROOT, 'supabase/functions/h2a/index.ts'), 'utf-8')
-      expect(content).toContain('SUPABASE_URL')
-      expect(content).toContain('SUPABASE_SERVICE_ROLE_KEY')
-      expect(content).toContain('NEXUS_ENDPOINT')
-      expect(content).toContain('NEXUS_PRD_KEY')
-      expect(content).toMatch(/Missing required env vars/)
-    })
-
-    it('Langfuse is optional with warning', () => {
-      const content = readFileSync(resolve(REPO_ROOT, 'supabase/functions/h2a/index.ts'), 'utf-8')
-      expect(content).toContain('LANGFUSE_PUBLIC_KEY')
-      expect(content).toContain('Langfuse disabled')
+    // Source-level env var presence checks enforced by invariant-check.sh INV-22
+    it('invariant-check.sh covers startup env var validation', () => {
+      const script = readFileSync(resolve(REPO_ROOT, 'scripts/invariant-check.sh'), 'utf-8')
+      expect(script).toContain('INV-22')
     })
   })
 
   describe('AC-3: Langfuse credentials from env only', () => {
-    it('langfuse.ts has no hardcoded keys or URLs', () => {
-      const content = readFileSync(resolve(REPO_ROOT, 'packages/mb-agent/src/langfuse.ts'), 'utf-8')
-      expect(content).not.toMatch(/pk-lf-/)
-      expect(content).not.toMatch(/sk-lf-/)
-      expect(content).not.toMatch(/https?:\/\/.*langfuse/)
+    it('initLangfuse accepts config as parameter (behavioral)', async () => {
+      const { initLangfuse, getLangfuseConfig } = await import('../langfuse.js')
+      const cfg = { publicKey: 'pk-test', secretKey: 'sk-test', baseUrl: 'http://localhost' }
+      initLangfuse(cfg)
+      expect(getLangfuseConfig()).toEqual(cfg)
     })
 
-    it('langfuse.ts takes config as parameter', () => {
-      const content = readFileSync(resolve(REPO_ROOT, 'packages/mb-agent/src/langfuse.ts'), 'utf-8')
-      expect(content).toContain('initLangfuse(cfg: LangfuseConfig)')
+    it('secret-scan catches hardcoded Langfuse keys', () => {
+      const script = readFileSync(resolve(REPO_ROOT, 'scripts/secret-scan.sh'), 'utf-8')
+      expect(script).toContain('sk-lf-')
+      expect(script).toContain('pk-lf-')
     })
   })
 

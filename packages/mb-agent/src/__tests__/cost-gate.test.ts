@@ -234,27 +234,10 @@ describe('SPEC-006 AC-6: Config from DB (no deploy to change)', () => {
 })
 
 describe('SPEC-006 AC-2: No Nexus call bypasses cost tracking', () => {
-  it('grep confirms every callWithCacheFallback site in reasoning.ts has a matching trackNexusCost', async () => {
-    const { readFileSync } = await import('fs')
-    const content = readFileSync(new URL('../reasoning.ts', import.meta.url), 'utf-8')
+  // Source-level invariants (callWithCacheFallback↔trackNexusCost, no raw callNexusStream)
+  // are enforced by scripts/invariant-check.sh (INV-01, INV-03).
 
-    const fallbackCalls = content.match(/callWithCacheFallback\(/g) ?? []
-    const trackCalls = content.match(/trackNexusCost\(/g) ?? []
-
-    expect(fallbackCalls.length).toBeGreaterThanOrEqual(2)
-    expect(trackCalls.length).toBe(fallbackCalls.length)
-  })
-
-  it('callNexusStream is not called in production code (grep)', async () => {
-    const { readFileSync, readdirSync } = await import('fs')
-    const { join } = await import('path')
-
-    const srcDir = new URL('..', import.meta.url).pathname
-    const files = readdirSync(srcDir).filter(f => f.endsWith('.ts') && !f.includes('test') && f !== 'nexus.ts' && f !== 'index.ts')
-
-    for (const file of files) {
-      const content = readFileSync(join(srcDir, file), 'utf-8')
-      expect(content).not.toContain('callNexusStream(')
-    }
+  it('trackNexusCost function exists and is callable', async () => {
+    expect(typeof trackNexusCost).toBe('function')
   })
 })

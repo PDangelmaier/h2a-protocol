@@ -16,7 +16,7 @@ export type { StepUpCheckResult, SessionAuthState, StepUpReason } from './step-u
 export { truncateToolResult } from './truncation.js'
 export type { TruncationOptions } from './truncation.js'
 export { estimateTokens } from './token-estimation.js'
-export { loadGrantedConsents, isConsentGranted, countGrantedConsents, clearConsentCache, buildConsentHint, logConsentDenial } from './consent.js'
+export { loadGrantedConsents, isConsentGranted, countGrantedConsents, clearConsentCache, revokeConsent, buildConsentHint, logConsentDenial } from './consent.js'
 export type { ConsentDenial } from './consent.js'
 export { loadAgentMemories, persistMemory, pruneMemories } from './memory.js'
 export { resolveModel, invalidateModelCache, registerModel, activateModel, listModelConfigs, rollbackModel, resolveModelPricing, invalidatePricingCache, resolveFallbackChain } from './model-config.js'
