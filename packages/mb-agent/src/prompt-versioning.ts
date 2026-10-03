@@ -78,44 +78,40 @@ export async function activatePromptVersion(
   identity: string,
   supabase: SupabaseClient,
 ): Promise<{ previous: PromptVersion | null; activated: PromptVersion }> {
-  const { data: target } = await supabase
+  const { data: rpcResult, error: rpcError } = await supabase
+    .rpc('activate_prompt_version', { p_version_id: versionId, p_identity: identity })
+    .single()
+
+  if (rpcError) throw new Error(`Failed to activate: ${rpcError.message}`)
+
+  const { data: activated } = await supabase
     .from('ccp_prompt_versions')
     .select('*')
     .eq('id', versionId)
     .single()
 
-  if (!target) throw new Error('Prompt version not found')
+  if (!activated) throw new Error('Prompt version not found after activation')
 
-  const { data: prev } = await supabase
-    .from('ccp_prompt_versions')
-    .select('*')
-    .eq('personality_id', target.personality_id)
-    .eq('is_active', true)
-    .maybeSingle()
-
-  if (prev) {
-    await supabase.from('ccp_prompt_versions').update({ is_active: false }).eq('id', prev.id)
+  let previous: PromptVersion | null = null
+  if (rpcResult.previous_id) {
+    const { data: prev } = await supabase
+      .from('ccp_prompt_versions')
+      .select('*')
+      .eq('id', rpcResult.previous_id)
+      .single()
+    if (prev) previous = mapRow(prev)
   }
-
-  const { data: activated, error } = await supabase
-    .from('ccp_prompt_versions')
-    .update({ is_active: true, activated_at: new Date().toISOString(), activated_by: identity })
-    .eq('id', versionId)
-    .select()
-    .single()
-
-  if (error || !activated) throw new Error(`Failed to activate: ${error?.message}`)
 
   invalidatePromptCache()
 
   logPromptVersionSwitch({
-    personalityId: target.personality_id,
-    fromVersion: prev ? prev.version : null,
-    toVersion: target.version,
+    personalityId: activated.personality_id,
+    fromVersion: previous?.version ?? null,
+    toVersion: rpcResult.activated_version,
     activatedBy: identity,
   }, supabase).catch(() => {})
 
-  return { previous: prev ? mapRow(prev) : null, activated: mapRow(activated) }
+  return { previous, activated: mapRow(activated) }
 }
 
 export async function rollbackPromptVersion(
@@ -123,38 +119,26 @@ export async function rollbackPromptVersion(
   identity: string,
   supabase: SupabaseClient,
 ): Promise<PromptVersion> {
-  const { data: configs } = await supabase
-    .from('ccp_prompt_versions')
-    .select('*')
-    .eq('personality_id', personalityId)
-    .order('activated_at', { ascending: false, nullsFirst: false })
-    .limit(2)
-
-  const rows = configs ?? []
-  const current = rows.find((r: Record<string, unknown>) => r.is_active)
-  const previous = rows.find((r: Record<string, unknown>) => !r.is_active)
-
-  if (!previous) throw new Error('No previous prompt version to rollback to')
-
-  if (current) {
-    await supabase.from('ccp_prompt_versions').update({ is_active: false }).eq('id', current.id)
-  }
-
-  const { data: rolledBack, error } = await supabase
-    .from('ccp_prompt_versions')
-    .update({ is_active: true, activated_at: new Date().toISOString(), activated_by: identity })
-    .eq('id', previous.id)
-    .select()
+  const { data: rpcResult, error: rpcError } = await supabase
+    .rpc('rollback_prompt_version', { p_personality_id: personalityId, p_identity: identity })
     .single()
 
-  if (error || !rolledBack) throw new Error(`Failed to rollback: ${error?.message}`)
+  if (rpcError) throw new Error(`Failed to rollback: ${rpcError.message}`)
+
+  const { data: rolledBack } = await supabase
+    .from('ccp_prompt_versions')
+    .select('*')
+    .eq('id', rpcResult.rolled_back_to_id)
+    .single()
+
+  if (!rolledBack) throw new Error('Rolled back version not found')
 
   invalidatePromptCache()
 
   logPromptVersionSwitch({
     personalityId,
-    fromVersion: current ? current.version : null,
-    toVersion: previous.version,
+    fromVersion: null,
+    toVersion: rpcResult.rolled_back_to_version,
     activatedBy: identity,
   }, supabase).catch(() => {})
 
