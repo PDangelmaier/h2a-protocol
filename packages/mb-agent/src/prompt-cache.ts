@@ -3,6 +3,7 @@ import type { NexusRequest } from './nexus.js'
 import type { FallbackResult } from './fallback.js'
 import type { FallbackChainEntry } from './model-config.js'
 import type { NexusConfig } from './types.js'
+import type { FallbackOptions } from './fallback.js'
 import { callWithFallback } from './fallback.js'
 import { NexusError } from './nexus.js'
 
@@ -98,19 +99,20 @@ export async function callWithCacheFallback(
   chain: FallbackChainEntry[],
   nexusConfig: NexusConfig,
   purpose: string,
+  fallbackOpts?: FallbackOptions,
 ): Promise<CacheFallbackResult> {
   if (!hasCacheMarkers(request)) {
-    const result = await callWithFallback(request, chain, nexusConfig, purpose)
+    const result = await callWithFallback(request, chain, nexusConfig, purpose, fallbackOpts)
     return { result, cacheRejected: false }
   }
 
   try {
-    const result = await callWithFallback(request, chain, nexusConfig, purpose)
+    const result = await callWithFallback(request, chain, nexusConfig, purpose, fallbackOpts)
     return { result, cacheRejected: false }
   } catch (err) {
     if (isCacheRejection(err)) {
       const retryRequest = removeCacheMarkers(request)
-      const result = await callWithFallback(retryRequest, chain, nexusConfig, purpose)
+      const result = await callWithFallback(retryRequest, chain, nexusConfig, purpose, fallbackOpts)
       return { result, cacheRejected: true }
     }
     throw err

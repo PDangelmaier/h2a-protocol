@@ -57,7 +57,7 @@ export async function callWithFallback(
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), remaining)
 
-      const result = await callNexusSync(req, nexusConfig)
+      const result = await callNexusSync(req, nexusConfig, { signal: controller.signal })
       clearTimeout(timer)
 
       return { ...result, actualModelId: entry.modelId, fallbacksUsed: i }

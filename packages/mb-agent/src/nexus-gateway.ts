@@ -6,7 +6,7 @@ import type { FallbackResult } from './fallback.js'
 import { callWithCacheFallback } from './prompt-cache.js'
 import { callWithFallback } from './fallback.js'
 import { callNexusSync } from './nexus.js'
-import { trackNexusCost, checkCostLimit } from './cost-gate.js'
+import { trackNexusCost, checkCostLimit, resolveTimeBudgetMs } from './cost-gate.js'
 import type { CostLimitCheck } from './cost-gate.js'
 
 export interface GatewayCallResult {
@@ -42,8 +42,9 @@ export async function callNexusGated(
     if (preCheck.exceeded) throw new CostLimitExceededError(preCheck)
   }
 
+  const timeBudgetMs = await resolveTimeBudgetMs(supabase)
   const { result, cacheRejected } = await callWithCacheFallback(
-    request, chain, nexusConfig, purpose,
+    request, chain, nexusConfig, purpose, { timeBudgetMs },
   )
 
   await trackNexusCost(sessionId, purpose, result, supabase, result.actualModelId)
@@ -59,7 +60,8 @@ export async function callNexusFallbackGated(
   sessionId: string,
   supabase: SupabaseClient,
 ): Promise<FallbackResult> {
-  const result = await callWithFallback(request, chain, nexusConfig, purpose)
+  const timeBudgetMs = await resolveTimeBudgetMs(supabase)
+  const result = await callWithFallback(request, chain, nexusConfig, purpose, { timeBudgetMs })
   await trackNexusCost(sessionId, purpose, result, supabase, result.actualModelId)
   return result
 }

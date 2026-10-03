@@ -40,7 +40,7 @@ export { validateOutput, injectCanary, buildCanary } from './output-validator.js
 export type { OutputValidationResult } from './output-validator.js'
 export type { SecurityEvent } from './reasoning.js'
 export { ClientDisconnectedError } from './reasoning.js'
-export { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
+export { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget, resolveTimeBudgetMs, invalidateTimeBudgetCache } from './cost-gate.js'
 export type { CostTrackResult, CostLimitCheck, TokenEstimate } from './cost-gate.js'
 export { buildToolError, sanitizeErrorForModel, classifyToolError } from './tool-errors.js'
 export type { ToolErrorType, ToolError } from './tool-errors.js'

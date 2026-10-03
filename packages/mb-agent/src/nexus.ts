@@ -34,6 +34,7 @@ export interface NexusStreamResult {
 export async function callNexusStream(
   request: NexusRequest,
   config: NexusConfig,
+  opts?: { signal?: AbortSignal },
 ): Promise<NexusStreamResult> {
   const url = `${config.endpoint}/model/${request.modelId}/converse-stream`
 
@@ -51,6 +52,7 @@ export async function callNexusStream(
       Authorization: `Bearer ${config.bearerToken}`,
     },
     body: JSON.stringify(body),
+    ...(opts?.signal ? { signal: opts.signal } : {}),
   })
 
   if (!response.ok) {
@@ -64,6 +66,7 @@ export async function callNexusStream(
 export async function callNexusSync(
   request: NexusRequest,
   config: NexusConfig,
+  opts?: { signal?: AbortSignal },
 ): Promise<NexusStreamResult> {
   const url = `${config.endpoint}/model/${request.modelId}/converse`
 
@@ -81,6 +84,7 @@ export async function callNexusSync(
       Authorization: `Bearer ${config.bearerToken}`,
     },
     body: JSON.stringify(body),
+    ...(opts?.signal ? { signal: opts.signal } : {}),
   })
 
   if (!response.ok) {

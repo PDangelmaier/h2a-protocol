@@ -344,6 +344,33 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(degradedEvent!.reason).toBe('cost_limit')
   })
 
+  it('SPEC-045 AC-3: hängender Nexus → Degradation innerhalb Time-Budget', async () => {
+    const budgetMs = 3000
+    await supabase
+      .from('cost_gate_config')
+      .upsert({ key: 'time_budget_ms', value: budgetMs }, { onConflict: 'key' })
+    invalidateAllCaches()
+
+    nexus.enqueueDelay(60_000)
+    nexus.enqueueDelay(60_000)
+    nexus.enqueueDelay(60_000)
+
+    const start = Date.now()
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+    const elapsed = Date.now() - start
+
+    expect(elapsed).toBeLessThan(budgetMs + 2000)
+
+    const degradedEvent = events.find(e => e.type === 'degraded_response')
+    expect(degradedEvent).toBeDefined()
+    expect(['fallback_exhausted', 'internal_error', 'timeout']).toContain(degradedEvent!.reason)
+
+    await supabase
+      .from('cost_gate_config')
+      .upsert({ key: 'time_budget_ms', value: 20000 }, { onConflict: 'key' })
+  })
+
   it('AC-7: Fehler ohne Fallback → degradierte SSE-Antwort + backgroundTasks', async () => {
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')

@@ -143,3 +143,30 @@ export async function checkTokenBudget(
   trackTokenBudgetExceeded(sessionId, estimate).catch(() => {})
   return false
 }
+
+const DEFAULT_TIME_BUDGET_MS = 20_000
+let cachedTimeBudgetMs: number | null = null
+let timeBudgetCacheExpiry = 0
+
+export async function resolveTimeBudgetMs(supabase: SupabaseClient): Promise<number> {
+  if (cachedTimeBudgetMs !== null && Date.now() < timeBudgetCacheExpiry) {
+    return cachedTimeBudgetMs
+  }
+  try {
+    const { data } = await supabase
+      .from('cost_gate_config')
+      .select('key, value')
+      .eq('key', 'time_budget_ms')
+    const row = (data ?? [])[0] as { key: string; value: number } | undefined
+    cachedTimeBudgetMs = row ? Number(row.value) : DEFAULT_TIME_BUDGET_MS
+  } catch {
+    cachedTimeBudgetMs = DEFAULT_TIME_BUDGET_MS
+  }
+  timeBudgetCacheExpiry = Date.now() + 60_000
+  return cachedTimeBudgetMs
+}
+
+export function invalidateTimeBudgetCache(): void {
+  cachedTimeBudgetMs = null
+  timeBudgetCacheExpiry = 0
+}

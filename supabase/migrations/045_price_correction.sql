@@ -23,3 +23,8 @@ SET cost_per_input_1k      = 0.0013,
     pricing_source         = 'https://aws.amazon.com/bedrock/pricing/',
     pricing_date           = '2026-10-03'
 WHERE model_id = 'claude-haiku-4-5' AND is_active = true;
+
+-- AC-3: Time budget per turn (configurable, default 20s)
+INSERT INTO cost_gate_config (key, value)
+VALUES ('time_budget_ms', 20000)
+ON CONFLICT (key) DO NOTHING;
