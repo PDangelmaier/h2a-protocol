@@ -366,7 +366,18 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
   return { response, backgroundTasks }
 }
 
-async function verifyAdminIdentity(env: HandlerEnv, req: Request): Promise<{ identity: string } | { error: string; status: 401 | 403 }> {
+export type AdminVerifyResult = { identity: string } | { error: string; status: 401 | 403 }
+export type AdminVerifier = (env: HandlerEnv, req: Request) => Promise<AdminVerifyResult>
+
+let customAdminVerifier: AdminVerifier | null = null
+
+export function setAdminVerifier(verifier: AdminVerifier | null): void {
+  customAdminVerifier = verifier
+}
+
+async function verifyAdminIdentity(env: HandlerEnv, req: Request): Promise<AdminVerifyResult> {
+  if (customAdminVerifier) return customAdminVerifier(env, req)
+
   const auth = req.headers.get('authorization')
   if (!auth?.startsWith('Bearer ')) return { error: 'Missing admin authorization', status: 401 }
 

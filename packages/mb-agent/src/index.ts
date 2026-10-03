@@ -1,4 +1,4 @@
-export { handleRequest, initHandler, type HandlerEnv, type HandleRequestResult } from './handler.js'
+export { handleRequest, initHandler, setAdminVerifier, type HandlerEnv, type HandleRequestResult, type AdminVerifier, type AdminVerifyResult } from './handler.js'
 export * from './types.js'
 export * from './enterprise-types.js'
 export { resolveIdentity, computePIDScore, pidScoreToTier } from './identity.js'
