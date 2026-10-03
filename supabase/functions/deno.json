@@ -1,6 +1,7 @@
 {
   "unstable": ["sloppy-imports"],
   "imports": {
+    "@h2a/core": "../../packages/core/src/index.ts",
     "@h2a/core/sse-buffer": "../../packages/core/src/sse-buffer.ts",
     "@h2a/mb-agent": "../../packages/mb-agent/src/index.ts",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"

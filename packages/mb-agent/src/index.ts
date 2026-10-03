@@ -1,3 +1,4 @@
+export { handleRequest, initHandler, type HandlerEnv, type HandleRequestResult } from './handler.js'
 export * from './types.js'
 export * from './enterprise-types.js'
 export { resolveIdentity, computePIDScore, pidScoreToTier } from './identity.js'

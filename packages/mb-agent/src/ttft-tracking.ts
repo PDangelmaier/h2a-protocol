@@ -9,6 +9,7 @@ export interface TtftMetrics {
   ttftMs: number
   totalMs: number
   sessionId: string
+  sessionDbId: string
   model: string
   toolRounds: number
 }
@@ -26,8 +27,9 @@ export async function trackTtft(
 
   const insertPromise = supabase.from('analytics_events').insert({
     event_type: 'ttft_measurement',
-    session_id: metrics.sessionId,
+    session_id: metrics.sessionDbId,
     metadata: {
+      h2a_session_id: metrics.sessionId,
       ttft_ms: metrics.ttftMs,
       total_ms: metrics.totalMs,
       model: metrics.model,
@@ -38,8 +40,9 @@ export async function trackTtft(
   const breachPromise = slaBreach
     ? supabase.from('analytics_events').insert({
         event_type: 'ttft_sla_breach',
-        session_id: metrics.sessionId,
+        session_id: metrics.sessionDbId,
         metadata: {
+          h2a_session_id: metrics.sessionId,
           ttft_ms: metrics.ttftMs,
           threshold_ms: SLA_THRESHOLD_MS,
           model: metrics.model,

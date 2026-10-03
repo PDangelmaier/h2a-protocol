@@ -108,7 +108,7 @@ export async function extractMemories(
   }
 
   const fbResult = await callWithFallback(request, fallbackChain, nexusConfig, 'memory-extraction')
-  await trackNexusCost(sessionId, 'memory-extraction', fbResult, supabase)
+  await trackNexusCost(sessionId, 'memory-extraction', fbResult, supabase, fbResult.actualModelId)
 
   let parsed: unknown
   try {

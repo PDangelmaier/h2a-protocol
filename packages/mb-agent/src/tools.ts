@@ -26,7 +26,7 @@ interface ToolDefinition {
 }
 
 interface ToolUse {
-  toolId: string
+  toolName: string
   input: Record<string, unknown>
 }
 
@@ -82,12 +82,13 @@ export async function executeToolWithConsent(
   const { data: tool } = await supabase
     .from('agent_tools')
     .select('*')
-    .eq('id', toolUse.toolId)
-    .single()
+    .eq('tool_name', toolUse.toolName)
+    .limit(1)
+    .maybeSingle()
 
   if (!tool) {
-    const result = buildToolError('not_found', toolUse.toolId, Date.now() - startMs, locale)
-    trackToolError(toolUse.toolId, 'not_found', Date.now() - startMs).catch(() => {})
+    const result = buildToolError('not_found', toolUse.toolName, Date.now() - startMs, locale)
+    trackToolError(toolUse.toolName, 'not_found', Date.now() - startMs).catch(() => {})
     return result
   }
 
@@ -99,7 +100,7 @@ export async function executeToolWithConsent(
   if (missing.length > 0) {
     logConsentDenial({
       profileId,
-      toolId: toolUse.toolId,
+      toolId: tool.id as string,
       toolName,
       requiredConsents: required,
       missingConsents: missing,
@@ -137,13 +138,13 @@ export async function executeToolWithConsent(
       session_id: null,
       profile_id: profileId,
       event_type: 'tool_execution',
-      metadata: { tool_id: toolUse.toolId, status: 'dispatched' },
+      metadata: { tool_id: tool.id, tool_name: toolName, status: 'dispatched' },
     })
 
     clearTimeout(timer)
     const durationMs = Date.now() - startMs
 
-    return { error: false, data: { status: 'dispatched', toolId: toolUse.toolId } }
+    return { error: false, data: { status: 'dispatched', toolName } }
   } catch (err: unknown) {
     const durationMs = Date.now() - startMs
     const errorType = classifyToolError(err, toolName, durationMs, timeoutMs)

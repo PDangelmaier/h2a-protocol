@@ -26,19 +26,17 @@ vi.mock('../step-up-auth.js', async (importOriginal) => {
 import { loadSessionAuthState, logStepUpEvent } from '../step-up-auth.js'
 
 function buildMockSupabase(tool: Record<string, unknown> | null) {
+  const chain: Record<string, unknown> = {}
+  const methods = ['select', 'eq', 'neq', 'lte', 'gte', 'order', 'limit', 'insert']
+  for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
+
+  chain.single = vi.fn().mockResolvedValue({ data: tool, error: null })
+  chain.maybeSingle = vi.fn().mockResolvedValue({ data: tool, error: null })
+  chain.then = (resolve: (v: unknown) => void) =>
+    Promise.resolve({ data: tool ? [tool] : [], error: null }).then(resolve)
+
   return {
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          single: vi.fn().mockResolvedValue({ data: tool, error: null }),
-          lte: vi.fn().mockResolvedValue({ data: tool ? [tool] : [], error: null }),
-        }),
-        lte: vi.fn().mockReturnValue({
-          eq: vi.fn().mockResolvedValue({ data: tool ? [tool] : [], error: null }),
-        }),
-      }),
-      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-    }),
+    from: vi.fn().mockReturnValue(chain),
   } as unknown as Parameters<typeof executeToolWithConsent>[3]
 }
 
@@ -66,7 +64,7 @@ describe('SPEC-018: executeToolWithConsent — typed errors', () => {
   it('returns not_found typed error when tool does not exist', async () => {
     const supabase = buildMockSupabase(null)
     const result = await executeToolWithConsent(
-      { toolId: 'nonexistent', input: {} },
+      { toolName: 'nonexistent', input: {} },
       'prof-1', [], supabase, 'de',
     )
     expect(result.error).toBe(true)
@@ -78,7 +76,7 @@ describe('SPEC-018: executeToolWithConsent — typed errors', () => {
     const tool = { ...baseTool, requires_consent: ['vehicle_control'] }
     const supabase = buildMockSupabase(tool)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
     )
     expect(result.error).toBe(true)
@@ -90,7 +88,7 @@ describe('SPEC-018: executeToolWithConsent — typed errors', () => {
   it('returns dispatched on success', async () => {
     const supabase = buildMockSupabase(baseTool)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: { query: 'EQS' } },
+      { toolName: 'vehicle_catalog', input: { query: 'EQS' } },
       'prof-1', [], supabase, 'de',
     )
     expect(result.error).toBe(false)
@@ -100,7 +98,7 @@ describe('SPEC-018: executeToolWithConsent — typed errors', () => {
   it('tool input parameters are NOT included in error results', async () => {
     const supabase = buildMockSupabase(null)
     const result = await executeToolWithConsent(
-      { toolId: 'missing', input: { secret_query: 'password123' } },
+      { toolName: 'missing', input: { secret_query: 'password123' } },
       'prof-1', [], supabase, 'de',
     )
     expect(JSON.stringify(result.data)).not.toContain('password123')
@@ -111,7 +109,7 @@ describe('SPEC-018: executeToolWithConsent — typed errors', () => {
     const tool = { ...baseTool, timeout_seconds: 15 }
     const supabase = buildMockSupabase(tool)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
     )
     expect(result.error).toBe(false)
@@ -162,7 +160,7 @@ describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
 
     const supabase = buildMockSupabase(highRiskTool)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
       { sessionId: 'sess-1' },
     )
@@ -180,7 +178,7 @@ describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
 
     const supabase = buildMockSupabase(highRiskTool)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
       { sessionId: 'sess-1', deviceFingerprint: 'fp-test' },
     )
@@ -197,7 +195,7 @@ describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
 
     const supabase = buildMockSupabase(highRiskTool)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
       { sessionId: 'sess-1', deviceFingerprint: 'fp-different' },
     )
@@ -209,7 +207,7 @@ describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
   it('normal risk tool passes without step-up context', async () => {
     const supabase = buildMockSupabase(baseTool)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
     )
     expect(result.error).toBe(false)
@@ -221,7 +219,7 @@ describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
     const toolWithConsent = { ...highRiskTool, requires_consent: ['vehicle_control'] }
     const supabase = buildMockSupabase(toolWithConsent)
     const result = await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
       { sessionId: 'sess-1' },
     )
@@ -239,7 +237,7 @@ describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
 
     const supabase = buildMockSupabase(highRiskTool)
     await executeToolWithConsent(
-      { toolId: 'tool-1', input: {} },
+      { toolName: 'vehicle_catalog', input: {} },
       'prof-1', [], supabase, 'de',
       { sessionId: 'sess-1' },
     )

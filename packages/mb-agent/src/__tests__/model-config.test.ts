@@ -9,22 +9,24 @@ vi.mock('../langfuse.js', () => ({
 function mockSupabase(responses: Record<string, unknown>) {
   const chain: Record<string, unknown> = {}
 
-  chain.from = vi.fn().mockReturnValue(chain)
-  chain.select = vi.fn().mockReturnValue(chain)
-  chain.insert = vi.fn().mockReturnValue(chain)
-  chain.update = vi.fn().mockReturnValue(chain)
-  chain.eq = vi.fn().mockReturnValue(chain)
-  chain.order = vi.fn().mockReturnValue(chain)
-  chain.limit = vi.fn().mockReturnValue(chain)
-  chain.maybeSingle = vi.fn().mockReturnValue(chain)
-
-  chain.single = vi.fn().mockImplementation(() => {
+  const resolveTable = () => {
     const table = (chain.from as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]
     if (responses[table]) {
       return Promise.resolve({ data: responses[table], error: null })
     }
     return Promise.resolve({ data: null, error: { message: 'not found' } })
-  })
+  }
+
+  chain.from = vi.fn().mockReturnValue(chain)
+  chain.select = vi.fn().mockReturnValue(chain)
+  chain.insert = vi.fn().mockReturnValue(chain)
+  chain.update = vi.fn().mockReturnValue(chain)
+  chain.eq = vi.fn().mockReturnValue(chain)
+  chain.neq = vi.fn().mockReturnValue(chain)
+  chain.order = vi.fn().mockReturnValue(chain)
+  chain.limit = vi.fn().mockReturnValue(chain)
+  chain.maybeSingle = vi.fn().mockImplementation(resolveTable)
+  chain.single = vi.fn().mockImplementation(resolveTable)
 
   return chain as unknown as Parameters<typeof resolveModel>[1]
 }
@@ -56,7 +58,7 @@ describe('resolveModel', () => {
     await resolveModel('main', supabase)
     await resolveModel('main', supabase)
 
-    const singleCalls = (supabase as Record<string, { mock: { calls: unknown[] } }>).single.mock.calls
+    const singleCalls = (supabase as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls
     expect(singleCalls.length).toBe(1)
   })
 
@@ -69,7 +71,7 @@ describe('resolveModel', () => {
     invalidateModelCache('main')
     await resolveModel('main', supabase)
 
-    const singleCalls = (supabase as Record<string, { mock: { calls: unknown[] } }>).single.mock.calls
+    const singleCalls = (supabase as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls
     expect(singleCalls.length).toBe(2)
   })
 })
@@ -94,24 +96,30 @@ describe('AC-2: DB unique constraint — one active model per purpose', () => {
   beforeEach(() => invalidateModelCache())
 
   it('activateModel deactivates previous before activating new', async () => {
-    const updateCalls: Array<{ id: string; is_active: boolean }> = []
-    const chain: Record<string, unknown> = {}
+    const updateCalls: Array<{ is_active: boolean }> = []
 
+    const prevRowsResult = {
+      data: [{ id: 'old-id', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: true }],
+      error: null,
+    }
+    const prevChain: Record<string, unknown> = {
+      order: vi.fn().mockReturnValue(prevRowsResult),
+      then: (resolve: (v: unknown) => void) => Promise.resolve(prevRowsResult).then(resolve),
+    }
+
+    const chain: Record<string, unknown> = {}
     chain.from = vi.fn().mockReturnValue(chain)
     chain.select = vi.fn().mockReturnValue(chain)
     chain.insert = vi.fn().mockReturnValue(chain)
-    chain.eq = vi.fn().mockImplementation((_col: string, val: unknown) => {
-      ;(chain as Record<string, unknown>)._lastEq = val
-      return chain
-    })
+    chain.eq = vi.fn().mockReturnValue(chain)
+    chain.neq = vi.fn().mockReturnValue(prevChain)
     chain.order = vi.fn().mockReturnValue(chain)
     chain.limit = vi.fn().mockReturnValue(chain)
     chain.maybeSingle = vi.fn().mockReturnValue(chain)
     chain.update = vi.fn().mockImplementation((data: Record<string, unknown>) => {
-      updateCalls.push({
-        id: String((chain as Record<string, unknown>)._lastEq ?? ''),
-        is_active: data.is_active as boolean,
-      })
+      if ('is_active' in data) {
+        updateCalls.push({ is_active: data.is_active as boolean })
+      }
       return chain
     })
 
@@ -121,12 +129,6 @@ describe('AC-2: DB unique constraint — one active model per purpose', () => {
       if (singleCallCount === 1) {
         return Promise.resolve({
           data: { id: 'new-id', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: false },
-          error: null,
-        })
-      }
-      if (singleCallCount === 2) {
-        return Promise.resolve({
-          data: { id: 'old-id', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: true },
           error: null,
         })
       }
@@ -232,12 +234,22 @@ describe('AC-6: Langfuse event on model switch', () => {
   it('activateModel calls trackModelSwitch with all required fields', async () => {
     const { trackModelSwitch: mockTrack } = await import('../langfuse.js')
 
+    const prevResult = {
+      data: [{ id: 'cfg-0', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: true }],
+      error: null,
+    }
+    const prevChain: Record<string, unknown> = {
+      order: vi.fn().mockReturnValue(prevResult),
+      then: (resolve: (v: unknown) => void) => Promise.resolve(prevResult).then(resolve),
+    }
+
     const chain: Record<string, unknown> = {}
     chain.from = vi.fn().mockReturnValue(chain)
     chain.select = vi.fn().mockReturnValue(chain)
     chain.insert = vi.fn().mockReturnValue(chain)
     chain.update = vi.fn().mockReturnValue(chain)
     chain.eq = vi.fn().mockReturnValue(chain)
+    chain.neq = vi.fn().mockReturnValue(prevChain)
     chain.order = vi.fn().mockReturnValue(chain)
     chain.limit = vi.fn().mockReturnValue(chain)
     chain.maybeSingle = vi.fn().mockReturnValue(chain)
@@ -248,12 +260,6 @@ describe('AC-6: Langfuse event on model switch', () => {
       if (singleCallCount === 1) {
         return Promise.resolve({
           data: { id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: false },
-          error: null,
-        })
-      }
-      if (singleCallCount === 2) {
-        return Promise.resolve({
-          data: { id: 'cfg-0', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: true },
           error: null,
         })
       }
@@ -331,12 +337,19 @@ describe('W2: Admin auth — non-admin → 403, activated_by = identity (REVIEW-
   })
 
   it('activated_by is set from verified identity, not from request body', async () => {
+    const emptyPrevResult = { data: [], error: null }
+    const emptyPrevChain: Record<string, unknown> = {
+      order: vi.fn().mockReturnValue(emptyPrevResult),
+      then: (resolve: (v: unknown) => void) => Promise.resolve(emptyPrevResult).then(resolve),
+    }
+
     const chain: Record<string, unknown> = {}
     chain.from = vi.fn().mockReturnValue(chain)
     chain.select = vi.fn().mockReturnValue(chain)
     chain.insert = vi.fn().mockReturnValue(chain)
     chain.update = vi.fn().mockReturnValue(chain)
     chain.eq = vi.fn().mockReturnValue(chain)
+    chain.neq = vi.fn().mockReturnValue(emptyPrevChain)
     chain.order = vi.fn().mockReturnValue(chain)
     chain.limit = vi.fn().mockReturnValue(chain)
     chain.maybeSingle = vi.fn().mockReturnValue(chain)
@@ -349,9 +362,6 @@ describe('W2: Admin auth — non-admin → 403, activated_by = identity (REVIEW-
           data: { id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: false },
           error: null,
         })
-      }
-      if (singleCallCount === 2) {
-        return Promise.resolve({ data: null, error: null })
       }
       return Promise.resolve({
         data: {
@@ -371,6 +381,12 @@ describe('W2: Admin auth — non-admin → 403, activated_by = identity (REVIEW-
 
   it('N1: update call passes activated_by from identity parameter to DB write', async () => {
     const updatePayloads: Record<string, unknown>[] = []
+    const emptyPrevResult = { data: [], error: null }
+    const emptyPrevChain: Record<string, unknown> = {
+      order: vi.fn().mockReturnValue(emptyPrevResult),
+      then: (resolve: (v: unknown) => void) => Promise.resolve(emptyPrevResult).then(resolve),
+    }
+
     const chain: Record<string, unknown> = {}
     chain.from = vi.fn().mockReturnValue(chain)
     chain.select = vi.fn().mockReturnValue(chain)
@@ -380,6 +396,7 @@ describe('W2: Admin auth — non-admin → 403, activated_by = identity (REVIEW-
       return chain
     })
     chain.eq = vi.fn().mockReturnValue(chain)
+    chain.neq = vi.fn().mockReturnValue(emptyPrevChain)
     chain.order = vi.fn().mockReturnValue(chain)
     chain.limit = vi.fn().mockReturnValue(chain)
     chain.maybeSingle = vi.fn().mockReturnValue(chain)
@@ -392,9 +409,6 @@ describe('W2: Admin auth — non-admin → 403, activated_by = identity (REVIEW-
           data: { id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: false },
           error: null,
         })
-      }
-      if (singleCallCount === 2) {
-        return Promise.resolve({ data: null, error: null })
       }
       return Promise.resolve({
         data: { id: 'cfg-1', purpose: 'main', model_id: 'claude-sonnet-4-6', is_active: true, activated_by: 'verified@mb.com' },
