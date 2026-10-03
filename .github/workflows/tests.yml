@@ -36,6 +36,9 @@ jobs:
 
       - run: pnpm run -r test
 
+      - name: Build @h2a/core (required by E2E imports)
+        run: pnpm --filter @h2a/core build
+
       - name: Start E2E DB + PostgREST
         run: KEEP_CONTAINER=1 bash scripts/e2e-db-setup.sh
 

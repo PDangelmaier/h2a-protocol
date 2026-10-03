@@ -292,6 +292,8 @@ export async function resolveModelPricingByModelId(
     .from('model_config')
     .select('purpose, cost_per_input_1k, cost_per_output_1k, cost_per_cached_input_1k')
     .eq('model_id', modelId)
+    .eq('is_active', true)
+    .order('purpose', { ascending: true })
     .limit(1)
     .maybeSingle()
 

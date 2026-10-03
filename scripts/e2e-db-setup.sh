@@ -85,13 +85,23 @@ SQL
 
 echo "Running migrations..."
 for f in "$MIGRATIONS_DIR"/*.sql; do
-  $PSQL -q -f "$f" 2>&1 | grep -v "^NOTICE" || true
+  $PSQL -v ON_ERROR_STOP=1 -q -f "$f" 2>&1 | { grep -v "^NOTICE" || true; }
 done
 
 echo "Running seeds..."
 for f in "$SEEDS_DIR"/*.sql; do
-  $PSQL -q -f "$f" 2>&1 | grep -v "^NOTICE" || true
+  $PSQL -v ON_ERROR_STOP=1 -q -f "$f" 2>&1 | { grep -v "^NOTICE" || true; }
 done
+
+echo "Post-seed: creating prompt versions from seeded personalities..."
+$PSQL -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO ccp_prompt_versions (personality_id, version, static_prompt, is_active, activated_at, activated_by)
+SELECT id, 1, system_prompt, true, now(), 'e2e-seed'
+FROM ccp_personalities
+WHERE NOT EXISTS (
+  SELECT 1 FROM ccp_prompt_versions pv WHERE pv.personality_id = ccp_personalities.id
+);
+SQL
 
 echo "Granting service_role access to all tables..."
 $PSQL -q <<'SQL'

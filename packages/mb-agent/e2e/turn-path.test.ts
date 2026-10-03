@@ -145,18 +145,15 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
       .order('sequence', { ascending: true })
 
     expect(turns).toBeDefined()
-    expect(turns!.length).toBeGreaterThanOrEqual(2)
+    expect(turns!.length).toBe(2)
 
-    const userTurn = turns!.find(t => t.role === 'user')
-    const assistantTurn = turns!.find(t => t.role === 'assistant')
-    expect(userTurn).toBeDefined()
-    expect(assistantTurn).toBeDefined()
-    expect((userTurn!.content as { text: string }).text).toBe('Hallo')
-    expect((assistantTurn!.content as { text: string }).text).toContain('MAX')
+    expect(turns![0].role).toBe('user')
+    expect(turns![1].role).toBe('assistant')
+    expect((turns![0].content as { text: string }).text).toBe('Hallo')
+    expect((turns![1].content as { text: string }).text).toContain('MAX')
 
-    const promptVersions = turns!.map(t => t.prompt_version).filter(Boolean)
-    expect(promptVersions.length).toBeGreaterThanOrEqual(1)
-    expect(typeof promptVersions[0]).toBe('number')
+    expect(turns![1].prompt_version).toBeTypeOf('number')
+    expect(turns![1].prompt_version).toBeGreaterThanOrEqual(1)
 
     const { data: sessionRow } = await supabase
       .from('sessions')
@@ -165,8 +162,8 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
       .single()
 
     expect(Number(sessionRow!.cost_usd)).toBeGreaterThan(0)
-    expect(sessionRow!.nexus_call_count).toBeGreaterThanOrEqual(1)
-    expect(nexus.requests.length).toBeGreaterThanOrEqual(1)
+    expect(sessionRow!.nexus_call_count).toBe(3)
+    expect(nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse')).length).toBe(1)
 
     const { data: ttftEvents } = await supabase
       .from('analytics_events')
@@ -193,9 +190,9 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
     expect(fullText).toContain('EQS')
 
-    const mainRequests = nexus.requests.filter(r => r.url.includes('/converse'))
-    expect(mainRequests.length).toBeGreaterThanOrEqual(2)
-    const secondCall = nexus.requests[1]
+    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    expect(mainRequests.length).toBe(2)
+    const secondCall = mainRequests[1]
     const msgs = secondCall.body.messages as Array<{ role: string; content: unknown[] }>
     const toolResultMsg = msgs.find(m =>
       m.role === 'user' && Array.isArray(m.content) && m.content.some((c: Record<string, unknown>) => 'toolResult' in c),
@@ -211,9 +208,9 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const { events, bgTasks } = await sendStream('Konfiguriere mir einen EQS')
     await Promise.allSettled(bgTasks)
 
-    const mainRequests = nexus.requests.filter(r => r.url.includes('/converse'))
-    expect(mainRequests.length).toBeGreaterThanOrEqual(2)
-    const secondReq = nexus.requests[1]
+    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    expect(mainRequests.length).toBe(2)
+    const secondReq = mainRequests[1]
     const msgs = secondReq.body.messages as Array<{ role: string; content: unknown[] }>
     const toolResultMsg = msgs.find(m =>
       m.role === 'user' && Array.isArray(m.content) && m.content.some((c: Record<string, unknown>) => 'toolResult' in c),
@@ -222,6 +219,8 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
 
     const toolResultContent = toolResultMsg!.content.find((c: Record<string, unknown>) => 'toolResult' in c) as { toolResult: { content: Array<{ json: { data: { missingConsents?: string[] } } }> } }
     const jsonBlock = toolResultContent?.toolResult?.content?.[0]?.json
+    expect(jsonBlock?._h2a_tool_data).toBe(true)
+    expect(jsonBlock?.tool).toBe('configurator')
     expect(jsonBlock?.data?.missingConsents).toBeDefined()
     expect(jsonBlock!.data.missingConsents).toContain('ai_personalization')
   })
@@ -297,7 +296,10 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
     const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
     expect(fullText).toContain('Berater')
-    expect(nexus.requests.length).toBeGreaterThanOrEqual(2)
+    const sonnetRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const haikuRequests = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
+    expect(sonnetRequests.length).toBe(1)
+    expect(haikuRequests.length).toBe(3)
 
     const { data: sessionRow } = await supabase
       .from('sessions')
@@ -307,7 +309,8 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
 
     const costUsd = Number(sessionRow!.cost_usd)
     const fallbackModel = models[1]
-    const expectedCost = (100 * Number(fallbackModel.cost_per_input_1k) + 50 * Number(fallbackModel.cost_per_output_1k)) / 1000
+    const perCallCost = (100 * Number(fallbackModel.cost_per_input_1k) + 50 * Number(fallbackModel.cost_per_output_1k)) / 1000
+    const expectedCost = 3 * perCallCost
     expect(costUsd).toBeCloseTo(expectedCost, 6)
   })
 
@@ -347,14 +350,20 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(endFrame).toBeDefined()
   })
 
-  it('AC-8b: Ungültige Session-ID → error-Event als SSE', async () => {
+  it('AC-8b: Ungültige Session-ID → degraded_response mit invalid_session', async () => {
     const req = buildStreamRequest('nonexistent-session-id', 'Hallo')
     const { response } = await handleRequest(req, env)
     const events = await parseSseStream(response)
 
-    const errorEvent = events.find(e => e.type === 'error')
-    expect(errorEvent).toBeDefined()
-    expect(errorEvent!.message).toBe('Invalid or inactive session')
+    const degraded = events.find(e => e.type === 'degraded_response')
+    expect(degraded).toBeDefined()
+    expect(degraded!.reason).toBe('invalid_session')
+
+    const textFrame = events.find(e => e.type === 'agent.frame' && e.frameType === 'text')
+    expect(textFrame).toBeDefined()
+
+    const endFrame = events.find(e => e.type === 'agent.frame' && e.frameType === 'end')
+    expect(endFrame).toBeDefined()
   })
 
   it('AC-9: session.open → stream mit zurückgegebener Session-ID', async () => {
@@ -392,8 +401,8 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
   })
 
   it('AC-10: Tool mit erteiltem Consent — configurator erlaubt', async () => {
-    await supabase.from('customer_consents').insert({
-      profile_id: fixture.profileId,
+    await supabase.from('consent_records').insert({
+      customer_id: fixture.profileId,
       consent_type: 'ai_personalization',
       granted: true,
     })
@@ -405,10 +414,10 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const { events, bgTasks } = await sendStream('Konfiguriere mir einen EQS')
     await Promise.allSettled(bgTasks)
 
-    const mainRequests = nexus.requests.filter(r => r.url.includes('/converse'))
-    expect(mainRequests.length).toBeGreaterThanOrEqual(2)
+    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    expect(mainRequests.length).toBe(2)
 
-    const secondReq = nexus.requests[1]
+    const secondReq = mainRequests[1]
     const msgs = secondReq.body.messages as Array<{ role: string; content: unknown[] }>
     const toolResultMsg = msgs.find(m =>
       m.role === 'user' && Array.isArray(m.content) && m.content.some((c: Record<string, unknown>) => 'toolResult' in c),
@@ -418,25 +427,10 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const jsonBlock = toolResultContent?.toolResult?.content?.[0]?.json
     expect(jsonBlock?.data?.missingConsents).toBeUndefined()
 
-    await supabase.from('customer_consents').delete().eq('profile_id', fixture.profileId)
+    await supabase.from('consent_records').delete().eq('customer_id', fixture.profileId)
   })
 
-  it('AC-11: Presence conversing-Event kommt vor dem ersten Nexus-Request', async () => {
-    let presenceSeenBeforeNexus = false
-    const originalInstall = nexus.install.bind(nexus)
-    nexus.restore()
-
-    const origFetch = globalThis.fetch
-    let nexusCallCount = 0
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url.includes('nexus-e2e-mock.local')) {
-        nexusCallCount++
-      }
-      return origFetch(input, init)
-    }) as typeof fetch
-
-    nexus.install()
+  it('AC-11: Presence conversing-Event kommt vor dem ersten Text-Frame', async () => {
     nexus.enqueueText('Antwort')
     enqueueBackgroundResponses()
 
@@ -444,8 +438,92 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     await Promise.allSettled(bgTasks)
 
     const presenceIdx = events.findIndex(e => e.type === 'presence.update' && e.state === 'conversing')
+    const firstTextIdx = events.findIndex(e => e.type === 'agent.frame' && e.frameType === 'text')
     expect(presenceIdx).toBeGreaterThanOrEqual(0)
+    expect(firstTextIdx).toBeGreaterThan(presenceIdx)
+  })
 
-    globalThis.fetch = origFetch
+  it('F6-a: Tool-Pruning — min_pid_score > pidScore filtert Tools', async () => {
+    const { data: allTools } = await supabase
+      .from('agent_tools')
+      .select('tool_name, min_pid_score')
+      .eq('is_active', true)
+
+    const pidExcluded = allTools!.filter(t => t.min_pid_score > 50)
+    expect(pidExcluded.length).toBeGreaterThan(0)
+
+    const { data: pruningRow } = await supabase
+      .from('cost_gate_config')
+      .select('value')
+      .eq('key', 'tool_pruning_max')
+      .maybeSingle()
+    const maxTools = pruningRow ? Number(pruningRow.value) : 8
+
+    nexus.enqueueText('Ich helfe Ihnen gerne.')
+    enqueueBackgroundResponses()
+
+    const { bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    const converseReq = nexus.requests.find(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const toolConfig = converseReq!.body.toolConfig as { tools: Array<{ toolSpec: { name: string } }> }
+    const toolNames = toolConfig.tools.map(t => t.toolSpec.name)
+
+    expect(toolNames.length).toBeLessThanOrEqual(maxTools)
+    expect(toolNames.length).toBeGreaterThan(0)
+    for (const t of pidExcluded) expect(toolNames).not.toContain(t.tool_name)
+  })
+
+  it('F6-b: DB-Zustand nach Stream-Ende ohne backgroundTasks abzuwarten', async () => {
+    nexus.enqueueText('Test ohne bgTasks')
+    enqueueBackgroundResponses()
+
+    const req = buildStreamRequest(fixture.sessionId, 'DB-Check')
+    const { response } = await handleRequest(req, env)
+    await parseSseStream(response)
+
+    const { data: turns } = await supabase
+      .from('conversation_turns')
+      .select('role')
+      .eq('session_id', fixture.dbId)
+      .order('sequence', { ascending: true })
+
+    expect(turns!.length).toBe(2)
+    expect(turns![0].role).toBe('user')
+    expect(turns![1].role).toBe('assistant')
+  })
+
+  it('F6-c: en-Session — degraded text in English', async () => {
+    const enProfileId = crypto.randomUUID()
+    const enSessionId = `e2e-en-${crypto.randomUUID()}`
+    const enDbId = crypto.randomUUID()
+
+    await supabase.from('customer_profiles').insert({
+      id: enProfileId, pid_score: 50, identity_tier: 'recognized', locale: 'en-GB', display_name: 'EN Testuser',
+    })
+    await supabase.from('sessions').insert({
+      id: enDbId, h2a_session_id: enSessionId, customer_id: enProfileId,
+      channel: 'web', journey_phase: 'research', status: 'active',
+      channel_metadata: { market: 'gb', locale: 'en-GB' },
+    })
+
+    await supabase.from('sessions').update({ cost_usd: 100.0, nexus_call_count: 500 }).eq('id', enDbId)
+
+    const req = buildStreamRequest(enSessionId, 'Hello')
+    const { response, backgroundTasks } = await handleRequest(req, env)
+    const events = await parseSseStream(response)
+    await Promise.allSettled(backgroundTasks)
+
+    const degraded = events.find(e => e.type === 'degraded_response')
+    expect(degraded!.reason).toBe('cost_limit')
+
+    const textFrame = events.find(e => e.type === 'agent.frame' && e.frameType === 'text')
+    const text = (textFrame!.content as { text: string }).text
+    expect(text.toLowerCase()).not.toContain('versuchen')
+
+    await supabase.from('analytics_events').delete().eq('session_id', enDbId)
+    await supabase.from('conversation_turns').delete().eq('session_id', enDbId)
+    await supabase.from('sessions').delete().eq('id', enDbId)
+    await supabase.from('customer_profiles').delete().eq('id', enProfileId)
   })
 })

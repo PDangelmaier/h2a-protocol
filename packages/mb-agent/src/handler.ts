@@ -216,45 +216,51 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
       }
 
       type SessionRow = { id: string; customer_id: string; channel: string; journey_phase: string; intent_score: number; channel_metadata: unknown }
-      let session: SessionRow | null = null
-      try {
-        const { data } = await supabase
-          .from('sessions')
-          .select('id, customer_id, channel, journey_phase, intent_score, channel_metadata')
-          .eq('h2a_session_id', sessionId)
-          .eq('status', 'active')
-          .single()
-        session = data as SessionRow | null
-      } catch {
-        pushEvent({ type: 'degraded_response', reason: 'internal_error' })
-        pushEvent({ type: 'agent.frame', frameType: 'text', content: { text: 'Verbindungsproblem. Bitte versuchen Sie es erneut.', streaming: false } })
+
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('sessions')
+        .select('id, customer_id, channel, journey_phase, intent_score, channel_metadata')
+        .eq('h2a_session_id', sessionId)
+        .eq('status', 'active')
+        .maybeSingle()
+
+      if (sessionError || !sessionData) {
+        const reason = sessionError ? 'internal_error' : 'invalid_session'
+        const msg = sessionError
+          ? 'Verbindungsproblem. Bitte versuchen Sie es erneut.'
+          : 'Invalid or inactive session'
+        pushEvent({ type: 'degraded_response', reason })
+        pushEvent({ type: 'agent.frame', frameType: 'text', content: { text: msg, streaming: false } })
         pushEvent({ type: 'agent.frame', frameType: 'end', content: {} })
         drainToController(controller)
         controller.close()
         return
       }
 
-      if (!session) {
-        pushEvent({ type: 'error', message: 'Invalid or inactive session' })
-        drainToController(controller)
-        controller.close()
-        return
-      }
+      const session = sessionData as SessionRow
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('customer_profiles')
         .select('display_name, pid_score, locale')
         .eq('id', session.customer_id)
         .single()
 
-      const { data: recentTurns } = await supabase
+      if (profileError) {
+        console.log(JSON.stringify({ type: 'h2a_db_error', query: 'customer_profiles', error: profileError.message }))
+      }
+
+      const { data: recentTurns, error: turnsError } = await supabase
         .from('conversation_turns')
         .select('role, content')
         .eq('session_id', session.id)
-        .order('sequence', { ascending: true })
+        .order('sequence', { ascending: false })
         .limit(20)
 
-      const conversationHistory = (recentTurns ?? []).map(t => ({
+      if (turnsError) {
+        console.log(JSON.stringify({ type: 'h2a_db_error', query: 'conversation_turns', error: turnsError.message }))
+      }
+
+      const conversationHistory = (recentTurns ?? []).reverse().map(t => ({
         role: t.role as 'user' | 'assistant',
         content: typeof t.content === 'string' ? t.content : (t.content as { text?: string })?.text ?? JSON.stringify(t.content),
       }))
