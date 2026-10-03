@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { executeToolWithConsent, getAvailableTools } from '../tools.js'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { executeToolWithConsent, getAvailableTools, setToolExecutor } from '../tools.js'
 
 vi.mock('../consent.js', () => ({
   buildConsentHint: vi.fn().mockReturnValue('Einwilligung erforderlich'),
@@ -59,6 +59,11 @@ const baseTool = {
 describe('SPEC-018: executeToolWithConsent — typed errors', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    setToolExecutor(async () => ({ status: 'dispatched' }))
+  })
+
+  afterEach(() => {
+    setToolExecutor(null)
   })
 
   it('returns not_found typed error when tool does not exist', async () => {
@@ -149,6 +154,11 @@ describe('SPEC-014: step-up auth in executeToolWithConsent', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    setToolExecutor(async () => ({ status: 'dispatched' }))
+  })
+
+  afterEach(() => {
+    setToolExecutor(null)
   })
 
   it('blocks high-risk tool when auth tier is insufficient', async () => {

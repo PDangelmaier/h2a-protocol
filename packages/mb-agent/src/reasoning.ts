@@ -11,6 +11,7 @@ import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
 import { FallbackChainExhaustedError, FallbackTimeoutError } from './fallback.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
+import type { StepUpContext } from './tools.js'
 import { buildToolError } from './tool-errors.js'
 import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
@@ -42,6 +43,7 @@ interface SessionState {
   journeyPhase: 'awareness' | 'research' | 'configuration' | 'pricing' | 'purchase' | 'order' | 'onboarding' | 'ownership' | 'service' | 'lifecycle'
   pidScore: number
   conversationHistory: ConversationMessage[]
+  deviceFingerprint?: string | null
 }
 
 interface ConversationMessage {
@@ -155,7 +157,8 @@ export async function reasoningLoop(
   let response: ProcessedResponse
   try {
     const offeredToolNames = new Set(tools.map(t => t.toolName))
-    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase, offeredToolNames, onStatusEvent, abortSignal)
+    const stepUpCtx: StepUpContext = { sessionId: session.dbId, deviceFingerprint: session.deviceFingerprint }
+    response = await processResponse(nexusRequest, config.nexus, fallbackChain, session.id, session.profileId, session.locale, supabase, offeredToolNames, onStatusEvent, abortSignal, stepUpCtx)
   } catch (err) {
     if (err instanceof ClientDisconnectedError) {
       return {
@@ -384,6 +387,7 @@ async function processResponse(
   offeredToolNames: Set<string>,
   onStatusEvent?: OnStatusEvent,
   abortSignal?: AbortSignal,
+  stepUpContext?: StepUpContext,
 ): Promise<ProcessedResponse> {
   const toolsUsed: string[] = []
   const newMemories: string[] = []
@@ -444,6 +448,7 @@ async function processResponse(
           grantedConsents,
           supabase,
           locale,
+          stepUpContext,
         )
         const maxTokens = getToolMaxTokens(call.name)
         const truncated = truncateToolResult(toolResult.data, { maxTokens })

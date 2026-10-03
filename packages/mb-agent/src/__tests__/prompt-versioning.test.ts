@@ -219,7 +219,7 @@ describe('rollbackPromptVersion', () => {
       }
       return Promise.resolve({ data: null, error: null }).then(resolve)
     }
-    return chain as unknown as Parameters<typeof rollbackPromptVersion>[1]
+    return chain as unknown as Parameters<typeof rollbackPromptVersion>[2]
   }
 
   it('rolls back to the previous version', async () => {
@@ -315,7 +315,7 @@ describe('prompt_version_switch event (AC-5)', () => {
       }
       return Promise.resolve({ data: null, error: null }).then(resolve)
     }
-    const mock = chain as unknown as Parameters<typeof rollbackPromptVersion>[1]
+    const mock = chain as unknown as Parameters<typeof rollbackPromptVersion>[2]
 
     await rollbackPromptVersion(PERSONALITY_ID, 'admin@mb.com', mock)
 

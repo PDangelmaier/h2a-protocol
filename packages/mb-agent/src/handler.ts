@@ -80,15 +80,32 @@ async function handleSession(req: Request, env: HandlerEnv): Promise<Response> {
   const supabase = createClient(env.supabaseUrl, env.supabaseServiceKey)
 
   if (body.type === 'session.open') {
+    const customerId = body.customerId as string | undefined
+    if (!customerId) return jsonResponse({ error: 'customerId is required' }, 400)
+
+    const { data: profile } = await supabase
+      .from('customer_profiles')
+      .select('id, identity_tier')
+      .eq('id', customerId)
+      .maybeSingle()
+
+    if (!profile) return jsonResponse({ error: 'Unknown customerId' }, 404)
+
+    const authTier = (profile.identity_tier as string) ?? 'anonymous'
+    const deviceFingerprint = (body.deviceFingerprint as string | undefined) ?? null
+
     const sessionId = crypto.randomUUID()
     const { error } = await supabase.from('sessions').insert({
       h2a_session_id: sessionId,
-      customer_id: body.customerId ?? null,
+      customer_id: customerId,
       channel: body.channel ?? 'web',
       status: 'active',
       presence_state: 'attentive',
       journey_phase: body.journeyPhase ?? 'awareness',
       conformance_level: body.hostCapabilities?.conformanceLevel ?? 'standard',
+      auth_tier: authTier,
+      device_fingerprint: deviceFingerprint,
+      last_auth_at: authTier !== 'anonymous' ? new Date().toISOString() : null,
     })
     if (error) return jsonResponse({ error: error.message }, 400)
 
@@ -269,6 +286,8 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
       const locale = profile?.locale ?? chMeta?.locale ?? 'de-AT'
       const market = chMeta?.market ?? locale.split('-')[1]?.toLowerCase() ?? 'de'
 
+      const deviceFingerprint = req.headers.get('X-H2A-Device-Fingerprint') ?? null
+
       const sessionState = {
         id: sessionId,
         dbId: session.id,
@@ -279,6 +298,7 @@ function handleStream(req: Request, env: HandlerEnv): HandleRequestResult {
         journeyPhase: (session.journey_phase ?? 'awareness') as 'awareness' | 'research' | 'configuration' | 'pricing' | 'purchase' | 'order' | 'onboarding' | 'ownership' | 'service' | 'lifecycle',
         pidScore: profile?.pid_score ?? 0,
         conversationHistory,
+        deviceFingerprint,
       }
 
       const agentConfig = {

@@ -93,13 +93,13 @@ describe('pruneTools (AC-2: max tools cap, AC-4: phase fallback)', () => {
     expect(result.map(t => t.toolName)).toEqual(['high_relevance', 'mid_relevance'])
   })
 
-  it('AC-4: falls back to channel-filtered when no phase match', () => {
+  it('AC-4: returns empty when no phase match (SPEC-046 AC-5: no fallback to phase-unrelated tools)', () => {
     const tools = [
       makeTool({ id: 'a', toolName: 'web_tool', allowedChannels: ['web'], allowedJourneyPhases: ['purchase'] }),
       makeTool({ id: 'b', toolName: 'any_tool', allowedChannels: [], allowedJourneyPhases: ['purchase'] }),
     ]
     const result = pruneTools(tools, { journeyPhase: 'research', channel: 'web', userMessage: '' }, 8)
-    expect(result.map(t => t.toolName)).toEqual(['web_tool', 'any_tool'])
+    expect(result.map(t => t.toolName)).toEqual([])
   })
 
   it('AC-4: returns empty when both channel and phase yield nothing', () => {

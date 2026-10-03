@@ -58,7 +58,7 @@ describe('resolveModel', () => {
     await resolveModel('main', supabase)
     await resolveModel('main', supabase)
 
-    const singleCalls = (supabase as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls
+    const singleCalls = (supabase as unknown as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls
     expect(singleCalls.length).toBe(1)
   })
 
@@ -71,7 +71,7 @@ describe('resolveModel', () => {
     invalidateModelCache('main')
     await resolveModel('main', supabase)
 
-    const singleCalls = (supabase as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls
+    const singleCalls = (supabase as unknown as Record<string, { mock: { calls: unknown[] } }>).maybeSingle.mock.calls
     expect(singleCalls.length).toBe(2)
   })
 })

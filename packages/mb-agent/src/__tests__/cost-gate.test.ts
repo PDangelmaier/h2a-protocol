@@ -74,7 +74,7 @@ describe('SPEC-006 AC-1: Cost tracking with atomic accumulation', () => {
 
   it('calculates cost from model pricing and token counts', async () => {
     const supabase = mockSupabaseForTrack({ cost_usd: 0.01, nexus_call_count: 1, input_tokens_total: 1000 })
-    const result = await trackNexusCost('sess-1', 'main', { inputTokens: 1000, outputTokens: 500 }, supabase)
+    const result = await trackNexusCost('sess-1', 'main', { inputTokens: 1000, outputTokens: 500, cacheReadInputTokens: 0 }, supabase)
 
     expect(result.costUsd).toBeCloseTo((1000 * 0.0039 + 500 * 0.0195) / 1000, 6)
     expect(result.totalCostUsd).toBe(0.01)
@@ -83,7 +83,7 @@ describe('SPEC-006 AC-1: Cost tracking with atomic accumulation', () => {
 
   it('calls increment_session_cost RPC for atomic update', async () => {
     const supabase = mockSupabaseForTrack({ cost_usd: 0.02, nexus_call_count: 2, input_tokens_total: 500 })
-    await trackNexusCost('sess-1', 'main', { inputTokens: 500, outputTokens: 200 }, supabase)
+    await trackNexusCost('sess-1', 'main', { inputTokens: 500, outputTokens: 200, cacheReadInputTokens: 0 }, supabase)
 
     expect(supabase.rpc).toHaveBeenCalledWith('increment_session_cost', {
       p_session_id: 'sess-1',
@@ -97,13 +97,13 @@ describe('SPEC-006 AC-1: Cost tracking with atomic accumulation', () => {
       rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'db down' } }),
     } as unknown as Parameters<typeof trackNexusCost>[3]
 
-    await expect(trackNexusCost('sess-1', 'main', { inputTokens: 100, outputTokens: 50 }, supabase))
+    await expect(trackNexusCost('sess-1', 'main', { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 0 }, supabase))
       .rejects.toThrow('Cost tracking failed')
   })
 
   it('returns accumulated total from DB (not local sum)', async () => {
     const supabase = mockSupabaseForTrack({ cost_usd: 0.35, nexus_call_count: 15, input_tokens_total: 5000 })
-    const result = await trackNexusCost('sess-1', 'main', { inputTokens: 100, outputTokens: 50 }, supabase)
+    const result = await trackNexusCost('sess-1', 'main', { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 0 }, supabase)
 
     expect(result.totalCostUsd).toBe(0.35)
     expect(result.callCount).toBe(15)

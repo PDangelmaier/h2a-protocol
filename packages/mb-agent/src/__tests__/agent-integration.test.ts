@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { setToolExecutor } from '../tools.js'
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
@@ -111,6 +112,7 @@ const mockConfig: AgentConfig = {
 
 const baseSession = {
   id: 'sess-1',
+  dbId: 'db-sess-1',
   profileId: 'prof-1',
   channel: 'web' as const,
   locale: 'de-DE',
@@ -125,8 +127,13 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    setToolExecutor(async () => ({ status: 'dispatched' }))
     const sbMod = await import('@supabase/supabase-js')
     mockCreateClient = sbMod.createClient as ReturnType<typeof vi.fn>
+  })
+
+  afterEach(() => {
+    setToolExecutor(null)
   })
 
   it('AC-1: reasoningLoop processes message via CCP — no direct Nexus call from Edge Function', async () => {
@@ -209,10 +216,10 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
     expect(result.toolsUsed).toContain('vehicle.remote_control')
     const secondCall = JSON.parse(mockFetch.mock.calls[1][1].body)
     const toolResultMsg = secondCall.messages.find(
-      (m: { content: unknown[] }) => Array.isArray(m.content) && m.content.some((c: Record<string, unknown>) => 'toolResult' in c),
+      (m: { content: unknown[] }) => Array.isArray(m.content) && m.content.some((c: unknown) => typeof c === 'object' && c !== null && 'toolResult' in c),
     )
     expect(toolResultMsg).toBeDefined()
-    const toolResult = toolResultMsg.content.find((c: Record<string, unknown>) => 'toolResult' in c)
+    const toolResult = toolResultMsg.content.find((c: unknown) => typeof c === 'object' && c !== null && 'toolResult' in c)
     const payload = toolResult.toolResult.content[0].json
     expect(payload).toHaveProperty('_h2a_tool_data', true)
     expect(payload.data).toHaveProperty('message')
@@ -276,10 +283,10 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
 
     const secondCall = JSON.parse(mockFetch.mock.calls[1][1].body)
     const toolResultMsg = secondCall.messages.find(
-      (m: { content: unknown[] }) => Array.isArray(m.content) && m.content.some((c: Record<string, unknown>) => 'toolResult' in c),
+      (m: { content: unknown[] }) => Array.isArray(m.content) && m.content.some((c: unknown) => typeof c === 'object' && c !== null && 'toolResult' in c),
     )
     expect(toolResultMsg).toBeDefined()
-    const toolResult = toolResultMsg.content.find((c: Record<string, unknown>) => 'toolResult' in c)
+    const toolResult = toolResultMsg.content.find((c: unknown) => typeof c === 'object' && c !== null && 'toolResult' in c)
     const payload2 = toolResult.toolResult.content[0].json
     expect(payload2).toHaveProperty('_h2a_tool_data', true)
     expect(payload2.data).toHaveProperty('status', 'dispatched')

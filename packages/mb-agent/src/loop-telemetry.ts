@@ -24,8 +24,21 @@ export function createLoopState(): LoopTelemetryState {
   return { traces: [], signatureCounts: new Map() }
 }
 
+function deepSortKeys(value: unknown): unknown {
+  if (value === null || value === undefined) return value
+  if (Array.isArray(value)) return value.map(deepSortKeys)
+  if (typeof value === 'object') {
+    const sorted: Record<string, unknown> = {}
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      sorted[key] = deepSortKeys((value as Record<string, unknown>)[key])
+    }
+    return sorted
+  }
+  return value
+}
+
 export function hashToolSignature(toolName: string, input: unknown): string {
-  const normalized = JSON.stringify(input, Object.keys(input as Record<string, unknown>).sort())
+  const normalized = JSON.stringify(deepSortKeys(input))
   const str = `${toolName}:${normalized}`
   let h1 = 0x811c9dc5
   let h2 = 0x01000193

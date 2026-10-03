@@ -160,6 +160,7 @@ function makeMockSupabase() {
 
 const session = {
   id: 'sess-1',
+  dbId: 'db-sess-1',
   profileId: 'prof-1',
   channel: 'web' as const,
   locale: 'de-DE',
@@ -419,13 +420,14 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
       ['vehicle_data', 'location_services'],
       expect.anything(),
       'de-DE',
+      expect.objectContaining({ sessionId: expect.any(String) }),
     )
   })
 
   it('AC-3 SPEC-010: returns not_offered error when model calls tool not in pruned set', async () => {
     const { pruneTools } = await import('../tool-pruning.js')
     vi.mocked(pruneTools).mockReturnValueOnce([
-      { id: 't-1', toolName: 'offered_tool', allowedChannels: [], allowedJourneyPhases: [], topics: [], displayName: '', description: '', endpointType: '', endpointUrl: '', inputSchema: {}, minPidScore: 0, requiresConsent: [], timeoutSeconds: 5, riskLevel: 'normal' },
+      { id: 't-1', toolName: 'offered_tool', allowedChannels: [], allowedJourneyPhases: [], topics: [] } as never,
     ])
 
     const { getAvailableTools } = await import('../tools.js')
