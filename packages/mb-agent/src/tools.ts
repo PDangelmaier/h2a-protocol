@@ -7,6 +7,32 @@ import { checkStepUp, loadSessionAuthState, logStepUpEvent } from './step-up-aut
 import type { SessionAuthState } from './step-up-auth.js'
 
 const DEFAULT_TIMEOUT_MS = 5_000
+const BEDROCK_TOOL_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_.]+$/
+
+export type ToolExecutor = (url: string, toolName: string, input: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>>
+
+let globalToolExecutor: ToolExecutor | null = null
+
+export function setToolExecutor(executor: ToolExecutor | null): void {
+  globalToolExecutor = executor
+}
+
+export function getToolExecutor(): ToolExecutor | null {
+  return globalToolExecutor
+}
+
+async function defaultToolExecutor(url: string, toolName: string, input: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool: toolName, input }),
+    signal,
+  })
+  if (!response.ok) {
+    throw Object.assign(new Error(`Tool endpoint returned ${response.status}`), { status: response.status })
+  }
+  return await response.json() as Record<string, unknown>
+}
 
 interface ToolDefinition {
   id: string
@@ -138,18 +164,28 @@ export async function executeToolWithConsent(
       session_id: null,
       profile_id: profileId,
       event_type: 'tool_execution',
-      metadata: { tool_id: tool.id, tool_name: toolName, status: 'dispatched' },
+      metadata: { tool_id: tool.id, tool_name: toolName, status: 'started' },
     })
 
-    clearTimeout(timer)
-    const durationMs = Date.now() - startMs
+    const endpointUrl = tool.endpoint_url as string | null
+    const executor = globalToolExecutor ?? defaultToolExecutor
+    let resultData: Record<string, unknown>
 
-    return { error: false, data: { status: 'dispatched', toolName } }
+    if (endpointUrl) {
+      resultData = await executor(endpointUrl, toolName, toolUse.input, controller.signal)
+    } else {
+      resultData = { status: 'stub', toolName, _stub: true }
+    }
+
+    clearTimeout(timer)
+    return { error: false, data: resultData }
   } catch (err: unknown) {
     const durationMs = Date.now() - startMs
     const errorType = classifyToolError(err, toolName, durationMs, timeoutMs)
     trackToolError(toolName, errorType, durationMs).catch(() => {})
-    return buildToolError(errorType, toolName, durationMs, locale)
+    const result = buildToolError(errorType, toolName, durationMs, locale)
+    result.data.sanitizedError = sanitizeErrorForModel(err)
+    return result
   }
 }
 
@@ -161,10 +197,20 @@ interface NexusToolSpec {
   }
 }
 
+export function sanitizeToolNameForBedrock(name: string): string {
+  const cleaned = name.replace(/[^a-zA-Z0-9_.]/g, '_')
+  if (!cleaned || !/^[a-zA-Z]/.test(cleaned)) return `t_${cleaned}`
+  return cleaned
+}
+
+export function isValidBedrockToolName(name: string): boolean {
+  return BEDROCK_TOOL_NAME_RE.test(name)
+}
+
 export function formatToolsForNexus(tools: ToolDefinition[]): NexusToolSpec[] {
   return tools.map(tool => ({
     toolSpec: {
-      name: tool.toolName,
+      name: sanitizeToolNameForBedrock(tool.toolName),
       description: tool.description,
       inputSchema: { json: tool.inputSchema },
     },

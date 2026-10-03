@@ -160,6 +160,7 @@ function makeMockSupabase() {
 
 const session = {
   id: 'sess-1',
+  dbId: 'db-sess-1',
   profileId: 'prof-1',
   channel: 'web' as const,
   locale: 'de-DE',
@@ -419,6 +420,7 @@ describe('AC-1: reasoning — Agentic Loop characterization', () => {
       ['vehicle_data', 'location_services'],
       expect.anything(),
       'de-DE',
+      expect.objectContaining({ sessionId: expect.any(String) }),
     )
   })
 

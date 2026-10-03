@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { setToolExecutor } from '../tools.js'
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
@@ -125,8 +126,13 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    setToolExecutor(async () => ({ status: 'dispatched' }))
     const sbMod = await import('@supabase/supabase-js')
     mockCreateClient = sbMod.createClient as ReturnType<typeof vi.fn>
+  })
+
+  afterEach(() => {
+    setToolExecutor(null)
   })
 
   it('AC-1: reasoningLoop processes message via CCP — no direct Nexus call from Edge Function', async () => {

@@ -69,7 +69,7 @@ export function pruneTools<T extends PrunableToolDef>(
   const channelFiltered = tools.filter(t => matchesChannel(t, ctx.channel))
   const phaseFiltered = channelFiltered.filter(t => matchesJourneyPhase(t, ctx.journeyPhase))
 
-  if (phaseFiltered.length === 0) return channelFiltered.slice(0, maxTools)
+  if (phaseFiltered.length === 0) return []
 
   const scored: ScoredTool<T>[] = phaseFiltered.map(tool => ({
     tool,

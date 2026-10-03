@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { executeToolWithConsent, getAvailableTools } from '../tools.js'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
+import { executeToolWithConsent, getAvailableTools, setToolExecutor } from '../tools.js'
+
+setToolExecutor(async () => ({ status: 'dispatched' }))
+afterAll(() => setToolExecutor(null))
 
 function makeMockSupabase(toolRow: Record<string, unknown> | null = null) {
   const chain: Record<string, unknown> = {}
@@ -38,6 +41,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
       tool_name: 'vehicle_catalog',
       requires_consent: ['ai_personalization'],
       is_active: true,
+      endpoint_url: '/mock-catalog',
     })
 
     const result = await executeToolWithConsent(
@@ -57,6 +61,7 @@ describe('AC-2: tools — Consent characterization (INV-13)', () => {
       tool_name: 'faq_search',
       requires_consent: [],
       is_active: true,
+      endpoint_url: '/mock-faq',
     })
 
     const result = await executeToolWithConsent(
