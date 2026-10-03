@@ -22,9 +22,10 @@ export interface ModelFallbackEvent {
   errorClass: string
 }
 
-function classifyError(err: unknown): { retryable: boolean; errorClass: string } {
+export function classifyError(err: unknown): { retryable: boolean; errorClass: string } {
   if (err instanceof NexusError) {
     if (err.statusCode === 429) return { retryable: true, errorClass: 'rate_limit' }
+    if (err.statusCode === 404) return { retryable: true, errorClass: 'model_not_found' }
     if (err.statusCode >= 500) return { retryable: true, errorClass: 'server_error' }
     if (err.statusCode === 0 || err.message.includes('not available'))
       return { retryable: true, errorClass: 'model_unavailable' }
@@ -32,6 +33,8 @@ function classifyError(err: unknown): { retryable: boolean; errorClass: string }
   }
   if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('timeout')))
     return { retryable: true, errorClass: 'timeout' }
+  if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch')))
+    return { retryable: true, errorClass: 'network_error' }
   return { retryable: false, errorClass: 'unknown' }
 }
 

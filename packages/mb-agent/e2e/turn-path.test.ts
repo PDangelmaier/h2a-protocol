@@ -371,6 +371,108 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
       .upsert({ key: 'time_budget_ms', value: 20000 }, { onConflict: 'key' })
   })
 
+  it('SPEC-045 AC-4a: 404 (Modell nicht verfügbar) → Fallback zum nächsten Modell', async () => {
+    nexus.enqueueError(404, 'Model not found')
+    nexus.enqueueText('Guten Tag! Fallback hat funktioniert.')
+
+    const { data: activeModels } = await supabase
+      .from('model_config')
+      .select('model_id, fallback_priority')
+      .eq('purpose', 'main')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+
+    if (!activeModels || activeModels.length < 2) {
+      await supabase.from('model_config').insert({
+        id: crypto.randomUUID(),
+        purpose: 'main',
+        model_id: 'claude-haiku-4-5',
+        is_active: true,
+        fallback_priority: 99,
+        cost_per_input_1k: 0.0013,
+        cost_per_output_1k: 0.0065,
+        cost_per_cached_input_1k: 0.00013,
+      })
+      invalidateAllCaches()
+    }
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
+    expect(fullText).toContain('Fallback')
+    expect(nexus.requests.length).toBe(2)
+  })
+
+  it('SPEC-045 AC-4b: Netzwerkfehler → Fallback zum nächsten Modell', async () => {
+    nexus.enqueueNetworkError('fetch failed')
+    nexus.enqueueText('Guten Tag! Nach Netzwerkfehler geantwortet.')
+
+    const { data: activeModels } = await supabase
+      .from('model_config')
+      .select('model_id, fallback_priority')
+      .eq('purpose', 'main')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+
+    if (!activeModels || activeModels.length < 2) {
+      await supabase.from('model_config').insert({
+        id: crypto.randomUUID(),
+        purpose: 'main',
+        model_id: 'claude-haiku-4-5',
+        is_active: true,
+        fallback_priority: 99,
+        cost_per_input_1k: 0.0013,
+        cost_per_output_1k: 0.0065,
+        cost_per_cached_input_1k: 0.00013,
+      })
+      invalidateAllCaches()
+    }
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
+    expect(fullText).toContain('Netzwerkfehler')
+    expect(nexus.requests.length).toBe(2)
+  })
+
+  it('SPEC-045 AC-4c: Fallback-Kette enthält nur verschiedene Modelle', async () => {
+    const { data } = await supabase
+      .from('model_config')
+      .select('purpose, model_id')
+      .eq('is_active', true)
+      .order('purpose')
+      .order('fallback_priority', { ascending: true })
+
+    const chains = new Map<string, string[]>()
+    for (const row of (data ?? []) as Array<{ purpose: string; model_id: string }>) {
+      const list = chains.get(row.purpose) ?? []
+      list.push(row.model_id)
+      chains.set(row.purpose, list)
+    }
+
+    for (const [purpose, modelIds] of chains) {
+      const unique = new Set(modelIds)
+      expect(unique.size, `Duplicate model in chain for purpose "${purpose}"`).toBe(modelIds.length)
+    }
+  })
+
+  it('SPEC-045 AC-4d: Alle genutzten purposes haben mindestens eine aktive Kette', async () => {
+    const requiredPurposes = ['main', 'fast', 'summarization', 'memory-extraction']
+    const { data } = await supabase
+      .from('model_config')
+      .select('purpose')
+      .eq('is_active', true)
+
+    const activePurposes = new Set((data ?? []).map((r: { purpose: string }) => r.purpose))
+    for (const p of requiredPurposes) {
+      expect(activePurposes.has(p), `purpose "${p}" has no active model`).toBe(true)
+    }
+  })
+
   it('AC-7: Fehler ohne Fallback → degradierte SSE-Antwort + backgroundTasks', async () => {
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')

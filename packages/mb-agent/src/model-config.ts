@@ -87,10 +87,17 @@ export async function resolveFallbackChain(
     throw new Error(`No active model for purpose "${purpose}" — check migration 020`)
   }
 
-  const entries = (data as Array<{ model_id: string; fallback_priority: number }>).map(r => ({
-    modelId: r.model_id,
-    priority: r.fallback_priority,
-  }))
+  const seen = new Set<string>()
+  const entries = (data as Array<{ model_id: string; fallback_priority: number }>)
+    .filter(r => {
+      if (seen.has(r.model_id)) return false
+      seen.add(r.model_id)
+      return true
+    })
+    .map(r => ({
+      modelId: r.model_id,
+      priority: r.fallback_priority,
+    }))
 
   chainCache.set(purpose, { entries, expiresAt: Date.now() + CACHE_TTL_MS })
   return entries

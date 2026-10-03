@@ -88,12 +88,13 @@ interface NexusSyncResponse {
 }
 
 export interface NexusMock {
-  queue: Array<NexusSyncResponse | { status: number; body: string } | { delayMs: number }>
+  queue: Array<NexusSyncResponse | { status: number; body: string } | { delayMs: number } | { networkError: string }>
   requests: Array<{ url: string; body: Record<string, unknown> }>
   enqueueText: (text: string) => void
   enqueueToolUse: (toolUseId: string, toolName: string, input: Record<string, unknown>) => void
   enqueueError: (status: number, message: string) => void
   enqueueDelay: (ms: number) => void
+  enqueueNetworkError: (message?: string) => void
   install: () => void
   restore: () => void
 }
@@ -132,6 +133,10 @@ export function createNexusMock(): NexusMock {
       mock.queue.push({ delayMs: ms })
     },
 
+    enqueueNetworkError(message = 'fetch failed') {
+      mock.queue.push({ networkError: message })
+    },
+
     install() {
       globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString()
@@ -143,6 +148,10 @@ export function createNexusMock(): NexusMock {
           const next = mock.queue.shift()
           if (!next) {
             return new Response('No queued response', { status: 500 })
+          }
+
+          if ('networkError' in next) {
+            throw new TypeError(next.networkError)
           }
 
           if ('delayMs' in next) {
