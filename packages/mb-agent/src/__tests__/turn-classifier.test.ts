@@ -203,6 +203,44 @@ describe('resolveRoutingPurpose', () => {
   })
 })
 
+describe('SPEC-045 AC-6: Anhang C — all listed cases are complex', () => {
+  const anhangC = [
+    'Autokauf', 'Neuwagenpreis', 'Zinssatz', 'Barzahlung', 'Jetzt ordern',
+    'Auto abschließen', 'Tür aufsperren', 'Standheizung an', 'Laden beenden',
+    'Ölwechsel', 'Bremse defekt', 'Panne', 'Batteriestand',
+    'unlock my car', 'buy now', 'book a test drive',
+  ]
+
+  for (const input of anhangC) {
+    it(`"${input}" → complex`, () => {
+      expect(classifyTurn(input).complexity).toBe('complex')
+    })
+  }
+
+  it('default complexity for unknown input is complex', () => {
+    expect(classifyTurn('Ich habe eine allgemeine Frage zu meinem Vertrag?').complexity).toBe('complex')
+  })
+})
+
+describe('SPEC-045 AC-6: fast routing disabled by default', () => {
+  beforeEach(() => {
+    invalidateRoutingConfig()
+  })
+
+  it('routing is disabled when DB has no config row', async () => {
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          in: () => Promise.resolve({ data: [] }),
+        }),
+      }),
+    } as never
+    const r = await resolveRoutingPurpose('Hallo', supabase)
+    expect(r.purpose).toBe('main')
+    expect(r.reason).toMatch(/^disabled:/)
+  })
+})
+
 describe('routing fixture (AC-4)', () => {
   it(`has at least 40 labeled messages`, () => {
     expect(fixture.length).toBeGreaterThanOrEqual(40)

@@ -16,24 +16,24 @@ vi.mock('../model-config.js', () => ({
   resolveModelPricing: vi.fn().mockResolvedValue({
     purpose: 'summarization',
     modelId: 'claude-haiku-4-5',
-    costPerInput1k: 0.00104,
-    costPerOutput1k: 0.0052,
-    costPerCachedInput1k: 0.000104,
+    costPerInput1k: 0.0013,
+    costPerOutput1k: 0.0065,
+    costPerCachedInput1k: 0.00013,
   }),
 }))
 
-vi.mock('../nexus.js', () => ({
-  callNexusSync: vi.fn().mockResolvedValue({
-    text: 'Summary: The user discussed vehicle configuration preferences.',
-    toolCalls: [],
-    stopReason: 'end_turn',
-    inputTokens: 200,
-    outputTokens: 30,
+vi.mock('../nexus-gateway.js', () => ({
+  callNexusSyncGated: vi.fn().mockResolvedValue({
+    result: {
+      text: 'Summary: The user discussed vehicle configuration preferences.',
+      toolCalls: [],
+      stopReason: 'end_turn',
+      inputTokens: 200,
+      outputTokens: 30,
+      cacheReadInputTokens: 0,
+    },
+    costCheck: null,
   }),
-}))
-
-vi.mock('../cost-gate.js', () => ({
-  trackNexusCost: vi.fn().mockResolvedValue({ costUsd: 0.001, totalCostUsd: 0.01, callCount: 1 }),
 }))
 
 vi.mock('../langfuse.js', () => ({
@@ -127,8 +127,8 @@ describe('AC-1: keepRecentTurns preserved', () => {
 
     await summarizeOlderTurns('sess-1', turns, nexusConfig, supabase)
 
-    const { callNexusSync } = await import('../nexus.js')
-    const callArgs = vi.mocked(callNexusSync).mock.calls[0][0]
+    const { callNexusSyncGated } = await import('../nexus-gateway.js')
+    const callArgs = vi.mocked(callNexusSyncGated).mock.calls[0][0]
     const sentText = callArgs.messages[0].content[0].text
 
     for (let i = 7; i <= 12; i++) {
@@ -272,16 +272,17 @@ describe('AC-4: enforceHardLimit truncation', () => {
 })
 
 describe('AC-5: summarization costs go through Cost Gate', () => {
-  it('calls trackNexusCost with summarization purpose', async () => {
+  it('routes through callNexusSyncGated with summarization purpose', async () => {
     const turns = makeTurns(10)
     const supabase = mockSupabase()
     await summarizeOlderTurns('sess-1', turns, { endpoint: '', bearerToken: '' }, supabase)
 
-    const { trackNexusCost } = await import('../cost-gate.js')
-    expect(vi.mocked(trackNexusCost)).toHaveBeenCalledWith(
-      'sess-1',
+    const { callNexusSyncGated } = await import('../nexus-gateway.js')
+    expect(vi.mocked(callNexusSyncGated)).toHaveBeenCalledWith(
+      expect.objectContaining({ modelId: 'claude-haiku-4-5' }),
+      { endpoint: '', bearerToken: '' },
       'summarization',
-      expect.objectContaining({ inputTokens: expect.any(Number) }),
+      'sess-1',
       supabase,
     )
   })

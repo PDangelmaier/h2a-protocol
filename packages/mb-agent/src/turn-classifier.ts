@@ -14,16 +14,18 @@ export interface RoutingConfig {
 }
 
 const COMPLEX_TOPIC_PATTERNS: RegExp[] = [
-  /(?:^|[\s,.!?])(?:kauf|bestell|leas(?:ing|en)|finanzier|kredit|rate|anzahlung)\w*/i,
-  /(?:^|[\s,.!?])(?:preis|koste[nt]|€|euro|rabatt|angebot)\w*/i,
-  /(?:^|[\s,.!?])(?:service|werkstatt|inspektion|wartung|reparatur|garantie|rückruf)\w*/i,
-  /(?:^|[\s,.!?])(?:start|stopp|öffne|schließ|klimaanlage|ladevorgang|verrieg|entrieg)\w*/i,
-  /(?:^|[\s,.!?])(?:buche?|termin|probefahrt|testfahrt)\w*/i,
-  /(?:^|[\s,.!?])(?:vertrag|stornierung|widerruf|reklamation|beschwerde)\w*/i,
-  /(?:^|[\s,.!?])(?:konfigur|ausstatt|extra|paket|option|motor|getriebe)\w*/i,
-  /(?:^|[\s,.!?])(?:ps|kw|nm|reichweite|kofferraum|verbrauch|beschleunigung|geschwindigkeit)\w*/i,
-  /(?:^|[\s,.!?])(?:lieferstatus|lieferzeit|bestellung|abholtermin)\w*/i,
-  /(?:^|[\s,.!?])(?:versicher|schutzbrief|mobilitätsgarantie)\w*/i,
+  /(?:kauf|bestell|leas(?:ing|en)|finanzier|kredit|rate[n]?|anzahlung|ordern|barzahlung|zinssatz)/i,
+  /(?:preis|koste[nt]|€|euro|rabatt|angebot)/i,
+  /(?:service|werkstatt|inspektion|wartung|reparatur|garantie|rückruf|ölwechsel|bremse|panne)/i,
+  /(?:start(?:e[n]?)?|stopp|öffne|schließ|klimaanlage|ladevorgang|verrieg|entrieg|aufsperr|standheizung|laden\s+beenden)/i,
+  /(?:buche?|termin|probefahrt|testfahrt|test\s+drive)/i,
+  /(?:vertrag|stornierung|widerruf|reklamation|beschwerde)/i,
+  /(?:konfigur|ausstatt|extra|paket|option|motor|getriebe)/i,
+  /(?:ps|kw|nm|reichweite|kofferraum|verbrauch|beschleunigung|geschwindigkeit|batteriestand)/i,
+  /(?:lieferstatus|lieferzeit|bestellung|abholtermin)/i,
+  /(?:versicher|schutzbrief|mobilitätsgarantie)/i,
+  /(?:buy\s+now|unlock|lock)\b/i,
+  /(?:book\s+a?\s*(?:test\s*drive|appointment))/i,
 ]
 
 const SIMPLE_PATTERNS: RegExp[] = [

@@ -47,19 +47,19 @@ describe('SPEC-005: resolveModelPricing', () => {
     expect(pricing.purpose).toBe('main')
   })
 
-  it('AC-1: returns pricing for haiku model', async () => {
+  it('AC-1: returns pricing for haiku model (1.3× list)', async () => {
     const supabase = mockSupabase({
       model_id: 'claude-haiku-4-5',
-      cost_per_input_1k: 0.00104,
-      cost_per_output_1k: 0.0052,
-      cost_per_cached_input_1k: 0.000104,
+      cost_per_input_1k: 0.0013,
+      cost_per_output_1k: 0.0065,
+      cost_per_cached_input_1k: 0.00013,
     })
 
     const pricing = await resolveModelPricing('memory-extraction', supabase)
     expect(pricing.modelId).toBe('claude-haiku-4-5')
-    expect(pricing.costPerInput1k).toBe(0.00104)
-    expect(pricing.costPerOutput1k).toBe(0.0052)
-    expect(pricing.costPerCachedInput1k).toBe(0.000104)
+    expect(pricing.costPerInput1k).toBe(0.0013)
+    expect(pricing.costPerOutput1k).toBe(0.0065)
+    expect(pricing.costPerCachedInput1k).toBe(0.00013)
   })
 })
 

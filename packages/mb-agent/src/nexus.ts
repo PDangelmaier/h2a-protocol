@@ -19,7 +19,7 @@ interface StreamEvent {
   contentBlock?: { toolUse?: { toolUseId: string; name: string } }
   toolUse?: { input: string }
   stopReason?: string
-  usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }
+  usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number; cacheWriteInputTokens?: number }
 }
 
 export interface NexusStreamResult {
@@ -29,11 +29,13 @@ export interface NexusStreamResult {
   inputTokens: number
   outputTokens: number
   cacheReadInputTokens: number
+  cacheWriteInputTokens: number
 }
 
 export async function callNexusStream(
   request: NexusRequest,
   config: NexusConfig,
+  opts?: { signal?: AbortSignal },
 ): Promise<NexusStreamResult> {
   const url = `${config.endpoint}/model/${request.modelId}/converse-stream`
 
@@ -51,6 +53,7 @@ export async function callNexusStream(
       Authorization: `Bearer ${config.bearerToken}`,
     },
     body: JSON.stringify(body),
+    ...(opts?.signal ? { signal: opts.signal } : {}),
   })
 
   if (!response.ok) {
@@ -64,6 +67,7 @@ export async function callNexusStream(
 export async function callNexusSync(
   request: NexusRequest,
   config: NexusConfig,
+  opts?: { signal?: AbortSignal },
 ): Promise<NexusStreamResult> {
   const url = `${config.endpoint}/model/${request.modelId}/converse`
 
@@ -81,6 +85,7 @@ export async function callNexusSync(
       Authorization: `Bearer ${config.bearerToken}`,
     },
     body: JSON.stringify(body),
+    ...(opts?.signal ? { signal: opts.signal } : {}),
   })
 
   if (!response.ok) {
@@ -91,7 +96,7 @@ export async function callNexusSync(
   const data = await response.json() as {
     output?: { message?: { content?: Array<{ text?: string; toolUse?: { toolUseId: string; name: string; input: Record<string, unknown> } }> } }
     stopReason?: string
-    usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }
+    usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number; cacheWriteInputTokens?: number }
   }
 
   const content = data.output?.message?.content ?? []
@@ -109,6 +114,7 @@ export async function callNexusSync(
     inputTokens: data.usage?.inputTokens ?? 0,
     outputTokens: data.usage?.outputTokens ?? 0,
     cacheReadInputTokens: data.usage?.cacheReadInputTokens ?? 0,
+    cacheWriteInputTokens: data.usage?.cacheWriteInputTokens ?? 0,
   }
 }
 
@@ -127,6 +133,7 @@ async function parseEventStream(response: Response): Promise<NexusStreamResult> 
   let inputTokens = 0
   let outputTokens = 0
   let cacheReadInputTokens = 0
+  let cacheWriteInputTokens = 0
 
   try {
     while (true) {
@@ -167,6 +174,7 @@ async function parseEventStream(response: Response): Promise<NexusStreamResult> 
             inputTokens = event.usage?.inputTokens ?? inputTokens
             outputTokens = event.usage?.outputTokens ?? outputTokens
             cacheReadInputTokens = event.usage?.cacheReadInputTokens ?? cacheReadInputTokens
+            cacheWriteInputTokens = event.usage?.cacheWriteInputTokens ?? cacheWriteInputTokens
             break
         }
       }
@@ -175,7 +183,7 @@ async function parseEventStream(response: Response): Promise<NexusStreamResult> 
     reader.releaseLock()
   }
 
-  return { text, toolCalls, stopReason, inputTokens, outputTokens, cacheReadInputTokens }
+  return { text, toolCalls, stopReason, inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens }
 }
 
 interface ExtractedEvents {

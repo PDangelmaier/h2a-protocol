@@ -1,9 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NexusConfig } from './types.js'
 import { resolveModel } from './model-config.js'
-import { callNexusSync } from './nexus.js'
 import { estimateTokens } from './token-estimation.js'
-import { trackNexusCost } from './cost-gate.js'
+import { callNexusSyncGated } from './nexus-gateway.js'
 
 export interface SummarizationConfig {
   softLimitTokens: number
@@ -90,8 +89,7 @@ export async function summarizeOlderTurns(
     inferenceConfig: { temperature: 0, maxTokens: 512 },
   }
 
-  const result = await callNexusSync(request, nexusConfig)
-  await trackNexusCost(sessionId, 'summarization', result, supabase)
+  const { result } = await callNexusSyncGated(request, nexusConfig, 'summarization', sessionId, supabase)
 
   const summary = result.text.trim()
   const tokenCount = estimateTokens(summary)

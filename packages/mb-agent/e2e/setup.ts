@@ -4,6 +4,7 @@ import { invalidateModelCache, invalidatePricingCache } from '../src/model-confi
 import { clearConsentCache } from '../src/consent.js'
 import { invalidatePromptCacheConfig } from '../src/prompt-cache.js'
 import { invalidateRoutingConfig } from '../src/turn-classifier.js'
+import { invalidateTimeBudgetCache } from '../src/cost-gate.js'
 import type { HandlerEnv } from '../src/handler.js'
 
 export const E2E_SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? ''
@@ -61,6 +62,7 @@ export function invalidateAllCaches() {
   clearConsentCache()
   invalidatePromptCacheConfig()
   invalidateRoutingConfig()
+  invalidateTimeBudgetCache()
 }
 
 export async function cleanupSession(supabase: SupabaseClient, fixture: SessionFixture) {
@@ -82,15 +84,17 @@ interface NexusSyncResponse {
     }
   }
   stopReason: string
-  usage: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number }
+  usage: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number; cacheWriteInputTokens?: number }
 }
 
 export interface NexusMock {
-  queue: Array<NexusSyncResponse | { status: number; body: string }>
+  queue: Array<NexusSyncResponse | { status: number; body: string } | { delayMs: number } | { networkError: string }>
   requests: Array<{ url: string; body: Record<string, unknown> }>
   enqueueText: (text: string) => void
   enqueueToolUse: (toolUseId: string, toolName: string, input: Record<string, unknown>) => void
   enqueueError: (status: number, message: string) => void
+  enqueueDelay: (ms: number) => void
+  enqueueNetworkError: (message?: string) => void
   install: () => void
   restore: () => void
 }
@@ -125,6 +129,14 @@ export function createNexusMock(): NexusMock {
       mock.queue.push({ status, body: message })
     },
 
+    enqueueDelay(ms: number) {
+      mock.queue.push({ delayMs: ms })
+    },
+
+    enqueueNetworkError(message = 'fetch failed') {
+      mock.queue.push({ networkError: message })
+    },
+
     install() {
       globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString()
@@ -136,6 +148,22 @@ export function createNexusMock(): NexusMock {
           const next = mock.queue.shift()
           if (!next) {
             return new Response('No queued response', { status: 500 })
+          }
+
+          if ('networkError' in next) {
+            throw new TypeError(next.networkError)
+          }
+
+          if ('delayMs' in next) {
+            const signal = init?.signal
+            await new Promise<void>((resolve, reject) => {
+              const timer = setTimeout(resolve, next.delayMs)
+              if (signal) {
+                if (signal.aborted) { clearTimeout(timer); reject(new DOMException('The operation was aborted.', 'AbortError')); return }
+                signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('The operation was aborted.', 'AbortError')) }, { once: true })
+              }
+            })
+            return new Response('Timeout mock never resolves', { status: 500 })
           }
 
           if ('status' in next) {

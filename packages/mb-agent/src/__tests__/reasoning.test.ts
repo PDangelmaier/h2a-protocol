@@ -124,6 +124,8 @@ vi.mock('../cost-gate.js', () => ({
   checkCostLimit: vi.fn().mockResolvedValue({ exceeded: false, totalCostUsd: 0.01, limitEur: 0.50 }),
   estimateInputTokens: vi.fn().mockReturnValue({ total: 1000, systemTokens: 500, historyTokens: 400, toolTokens: 100 }),
   checkTokenBudget: vi.fn().mockResolvedValue(true),
+  resolveTimeBudgetMs: vi.fn().mockResolvedValue(20_000),
+  invalidateTimeBudgetCache: vi.fn(),
 }))
 
 vi.mock('../state-tracking.js', () => ({

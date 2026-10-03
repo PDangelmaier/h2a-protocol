@@ -314,6 +314,299 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(costUsd).toBeCloseTo(expectedCost, 6)
   })
 
+  it('A1-Fix: Background-Calls buchen mit eigenem Purpose-Preis, nicht main', async () => {
+    const { data: mainModel } = await supabase
+      .from('model_config')
+      .select('cost_per_input_1k, cost_per_output_1k')
+      .eq('purpose', 'main')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+      .limit(1)
+      .single()
+
+    const { data: bgModel } = await supabase
+      .from('model_config')
+      .select('cost_per_input_1k, cost_per_output_1k')
+      .eq('purpose', 'memory-extraction')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+      .limit(1)
+      .single()
+
+    expect(mainModel).toBeDefined()
+    expect(bgModel).toBeDefined()
+    expect(Number(mainModel!.cost_per_input_1k)).not.toBe(Number(bgModel!.cost_per_input_1k))
+
+    await supabase.from('sessions').update({ cost_usd: 0, nexus_call_count: 0 }).eq('id', fixture.dbId)
+
+    nexus.enqueueText('Guten Tag!')
+    enqueueBackgroundResponses()
+    invalidateAllCaches()
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    const mainReqs = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const bgReqs = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
+    expect(mainReqs.length).toBe(1)
+    expect(bgReqs.length).toBe(2)
+
+    const { data: sessionRow } = await supabase
+      .from('sessions')
+      .select('cost_usd')
+      .eq('id', fixture.dbId)
+      .single()
+
+    const costUsd = Number(sessionRow!.cost_usd)
+    const mainCost = (100 * Number(mainModel!.cost_per_input_1k) + 50 * Number(mainModel!.cost_per_output_1k)) / 1000
+    const bgCost = (100 * Number(bgModel!.cost_per_input_1k) + 50 * Number(bgModel!.cost_per_output_1k)) / 1000
+    const expectedTotal = mainCost + 2 * bgCost
+    expect(costUsd).toBeCloseTo(expectedTotal, 6)
+  })
+
+  it('SPEC-045 AC-1: Session über Kostenlimit → 0 Nexus-Aufrufe', async () => {
+    const { data: configRows } = await supabase
+      .from('cost_gate_config')
+      .select('key, value')
+      .in('key', ['cost_limit_eur', 'usd_eur_rate'])
+
+    const config = new Map(
+      (configRows ?? []).map((r: { key: string; value: number }) => [r.key, Number(r.value)]),
+    )
+    const limitEur = config.get('cost_limit_eur') ?? 0.5
+    const rate = config.get('usd_eur_rate') ?? 0.92
+    const overLimitUsd = (limitEur / rate) + 1.0
+
+    await supabase
+      .from('sessions')
+      .update({ cost_usd: overLimitUsd })
+      .eq('id', fixture.dbId)
+
+    nexus.enqueueText('This should never be reached')
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    expect(nexus.requests.length).toBe(0)
+
+    const degradedEvent = events.find(e => e.type === 'degraded_response')
+    expect(degradedEvent).toBeDefined()
+    expect(degradedEvent!.reason).toBe('cost_limit')
+  })
+
+  it('SPEC-045 AC-3: hängender Nexus → Degradation innerhalb Time-Budget', async () => {
+    const budgetMs = 3000
+    await supabase
+      .from('cost_gate_config')
+      .upsert({ key: 'time_budget_ms', value: budgetMs }, { onConflict: 'key' })
+    invalidateAllCaches()
+
+    nexus.enqueueDelay(60_000)
+    nexus.enqueueDelay(60_000)
+    nexus.enqueueDelay(60_000)
+
+    const start = Date.now()
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+    const elapsed = Date.now() - start
+
+    expect(elapsed).toBeLessThan(budgetMs + 2000)
+
+    const degradedEvent = events.find(e => e.type === 'degraded_response')
+    expect(degradedEvent).toBeDefined()
+    expect(['fallback_exhausted', 'internal_error', 'timeout']).toContain(degradedEvent!.reason)
+
+    await supabase
+      .from('cost_gate_config')
+      .upsert({ key: 'time_budget_ms', value: 20000 }, { onConflict: 'key' })
+  })
+
+  it('SPEC-045 AC-4a: 404 (Modell nicht verfügbar) → Fallback zum nächsten Modell', async () => {
+    nexus.enqueueError(404, 'Model not found')
+    nexus.enqueueText('Guten Tag! Fallback hat funktioniert.')
+    enqueueBackgroundResponses()
+
+    const { data: activeModels } = await supabase
+      .from('model_config')
+      .select('model_id, fallback_priority')
+      .eq('purpose', 'main')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+
+    if (!activeModels || activeModels.length < 2) {
+      await supabase.from('model_config').insert({
+        id: crypto.randomUUID(),
+        purpose: 'main',
+        model_id: 'claude-haiku-4-5',
+        is_active: true,
+        fallback_priority: 99,
+        cost_per_input_1k: 0.0013,
+        cost_per_output_1k: 0.0065,
+        cost_per_cached_input_1k: 0.00013,
+      })
+      invalidateAllCaches()
+    }
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
+    expect(fullText).toContain('Fallback')
+    const sonnetReqs = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    expect(sonnetReqs.length).toBe(1)
+    const haikuReqs = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
+    expect(haikuReqs.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('SPEC-045 AC-4b: Netzwerkfehler → Fallback zum nächsten Modell', async () => {
+    nexus.enqueueNetworkError('fetch failed')
+    nexus.enqueueText('Guten Tag! Nach Netzwerkfehler geantwortet.')
+    enqueueBackgroundResponses()
+
+    const { data: activeModels } = await supabase
+      .from('model_config')
+      .select('model_id, fallback_priority')
+      .eq('purpose', 'main')
+      .eq('is_active', true)
+      .order('fallback_priority', { ascending: true })
+
+    if (!activeModels || activeModels.length < 2) {
+      await supabase.from('model_config').insert({
+        id: crypto.randomUUID(),
+        purpose: 'main',
+        model_id: 'claude-haiku-4-5',
+        is_active: true,
+        fallback_priority: 99,
+        cost_per_input_1k: 0.0013,
+        cost_per_output_1k: 0.0065,
+        cost_per_cached_input_1k: 0.00013,
+      })
+      invalidateAllCaches()
+    }
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
+    expect(fullText).toContain('Netzwerkfehler')
+    const sonnetReqs = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    expect(sonnetReqs.length).toBe(1)
+    const haikuReqs = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
+    expect(haikuReqs.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('SPEC-045 AC-4c: Fallback-Kette enthält nur verschiedene Modelle', async () => {
+    const { data } = await supabase
+      .from('model_config')
+      .select('purpose, model_id')
+      .eq('is_active', true)
+      .order('purpose')
+      .order('fallback_priority', { ascending: true })
+
+    const chains = new Map<string, string[]>()
+    for (const row of (data ?? []) as Array<{ purpose: string; model_id: string }>) {
+      const list = chains.get(row.purpose) ?? []
+      list.push(row.model_id)
+      chains.set(row.purpose, list)
+    }
+
+    for (const [purpose, modelIds] of chains) {
+      const unique = new Set(modelIds)
+      expect(unique.size, `Duplicate model in chain for purpose "${purpose}"`).toBe(modelIds.length)
+    }
+  })
+
+  it('SPEC-045 AC-4d: Alle genutzten purposes haben mindestens eine aktive Kette', async () => {
+    const requiredPurposes = ['main', 'fast', 'summarization', 'memory-extraction']
+    const { data } = await supabase
+      .from('model_config')
+      .select('purpose')
+      .eq('is_active', true)
+
+    const activePurposes = new Set((data ?? []).map((r: { purpose: string }) => r.purpose))
+    for (const p of requiredPurposes) {
+      expect(activePurposes.has(p), `purpose "${p}" has no active model`).toBe(true)
+    }
+  })
+
+  it('SPEC-045 AC-5a: 20 gleichzeitige Buchungen → exakte Summe', async () => {
+    const costPerCall = 0.001
+    const concurrency = 20
+
+    await supabase
+      .from('sessions')
+      .update({ cost_usd: 0, nexus_call_count: 0, input_tokens_total: 0 })
+      .eq('id', fixture.dbId)
+
+    const promises = Array.from({ length: concurrency }, () =>
+      supabase.rpc('increment_session_cost', {
+        p_session_id: fixture.sessionId,
+        p_cost_delta: costPerCall,
+        p_input_tokens: 100,
+      }),
+    )
+
+    const results = await Promise.all(promises)
+    for (const r of results) {
+      expect(r.error).toBeNull()
+    }
+
+    const { data: sessionRow } = await supabase
+      .from('sessions')
+      .select('cost_usd, nexus_call_count, input_tokens_total')
+      .eq('id', fixture.dbId)
+      .single()
+
+    const expectedCost = costPerCall * concurrency
+    expect(Number(sessionRow!.cost_usd)).toBeCloseTo(expectedCost, 6)
+    expect(sessionRow!.nexus_call_count).toBe(concurrency)
+    expect(Number(sessionRow!.input_tokens_total)).toBe(100 * concurrency)
+  })
+
+  it('SPEC-045 AC-5b: Buchung für nicht-existente Session → leere Rückgabe', async () => {
+    const { data, error } = await supabase.rpc('increment_session_cost', {
+      p_session_id: 'nonexistent-session-id',
+      p_cost_delta: 0.001,
+      p_input_tokens: 50,
+    })
+
+    expect(error).toBeNull()
+    expect(data).toEqual([])
+  })
+
+  it('SPEC-045 AC-5c: Rückgabewert enthält aktualisierte Felder', async () => {
+    await supabase
+      .from('sessions')
+      .update({ cost_usd: 0.01, nexus_call_count: 5, input_tokens_total: 500 })
+      .eq('id', fixture.dbId)
+
+    const { data, error } = await supabase.rpc('increment_session_cost', {
+      p_session_id: fixture.sessionId,
+      p_cost_delta: 0.002,
+      p_input_tokens: 100,
+    })
+
+    expect(error).toBeNull()
+    const row = (data as Array<{ cost_usd: number; nexus_call_count: number; input_tokens_total: number }>)[0]
+    expect(Number(row.cost_usd)).toBeCloseTo(0.012, 6)
+    expect(row.nexus_call_count).toBe(6)
+    expect(Number(row.input_tokens_total)).toBe(600)
+  })
+
+  it('SPEC-045 AC-6: fast routing default off — simple turn uses main model', async () => {
+    nexus.enqueueText('Hallo! Wie kann ich helfen?')
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    expect(nexus.requests.length).toBeGreaterThanOrEqual(1)
+    const firstReq = nexus.requests[0]
+    const modelId = firstReq.body.modelId ?? (firstReq.url.match(/\/model\/([^/]+)\//)?.[1])
+    expect(modelId).not.toContain('haiku')
+  })
+
   it('AC-7: Fehler ohne Fallback → degradierte SSE-Antwort + backgroundTasks', async () => {
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')

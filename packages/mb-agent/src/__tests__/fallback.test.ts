@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { callWithFallback, FallbackTimeoutError, FallbackChainExhaustedError } from '../fallback.js'
+import { callWithFallback, classifyError, FallbackTimeoutError, FallbackChainExhaustedError } from '../fallback.js'
 import type { FallbackChainEntry } from '../model-config.js'
 import type { NexusRequest } from '../nexus.js'
 import { NexusError } from '../nexus.js'
@@ -326,5 +326,47 @@ describe('SPEC-024: Model-Fallback-Chain', () => {
       expect(result.inputTokens).toBe(100)
       expect(result.outputTokens).toBe(50)
     })
+  })
+})
+
+describe('SPEC-045 AC-4: classifyError — 404 and network errors retryable', () => {
+  it('404 is retryable with errorClass model_not_found', () => {
+    const result = classifyError(new NexusError('Nexus 404: not found', 404))
+    expect(result.retryable).toBe(true)
+    expect(result.errorClass).toBe('model_not_found')
+  })
+
+  it('TypeError (network error) is retryable', () => {
+    const result = classifyError(new TypeError('fetch failed'))
+    expect(result.retryable).toBe(true)
+    expect(result.errorClass).toBe('network_error')
+  })
+
+  it('Error with fetch message is retryable', () => {
+    const result = classifyError(new Error('request to nexus failed: fetch failed'))
+    expect(result.retryable).toBe(true)
+    expect(result.errorClass).toBe('network_error')
+  })
+
+  it('falls back on 404 to next model in chain', async () => {
+    mockCallNexus
+      .mockRejectedValueOnce(new NexusError('Nexus 404: Model not found', 404))
+      .mockResolvedValueOnce(okResult)
+
+    const result = await callWithFallback(baseRequest, chain3, nexusConfig, 'main')
+
+    expect(result.fallbacksUsed).toBe(1)
+    expect(mockCallNexus).toHaveBeenCalledTimes(2)
+  })
+
+  it('falls back on network error to next model in chain', async () => {
+    mockCallNexus
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(okResult)
+
+    const result = await callWithFallback(baseRequest, chain3, nexusConfig, 'main')
+
+    expect(result.fallbacksUsed).toBe(1)
+    expect(mockCallNexus).toHaveBeenCalledTimes(2)
   })
 })

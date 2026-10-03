@@ -35,12 +35,13 @@ describe('SPEC-001 AC-1: Extraction call outside answer path', () => {
     expect(extraction).toContain("resolveFallbackChain('memory-extraction'")
   })
 
-  it('extraction cost tracked via trackNexusCost', async () => {
+  it('extraction cost tracked via nexus-gateway (callNexusFallbackGated)', async () => {
     const fs = await import('node:fs')
     const extraction = fs.readFileSync(
       new URL('../memory-extraction.ts', import.meta.url), 'utf-8',
     )
-    expect(extraction).toContain("trackNexusCost(sessionId, 'memory-extraction'")
+    expect(extraction).toContain('callNexusFallbackGated(')
+    expect(extraction).not.toContain('trackNexusCost(')
   })
 
   it('extraction respects cost gate — exits early if exceeded', async () => {

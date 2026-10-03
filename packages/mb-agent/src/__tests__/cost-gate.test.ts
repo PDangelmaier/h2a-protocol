@@ -110,6 +110,65 @@ describe('SPEC-006 AC-1: Cost tracking with atomic accumulation', () => {
   })
 })
 
+describe('SPEC-045 AC-7: Prompt caching cost formula', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('accounts for cache-write tokens at 1.25× input price', async () => {
+    const supabase = mockSupabaseForTrack({ cost_usd: 0.05, nexus_call_count: 1, input_tokens_total: 1000 })
+    const result = await trackNexusCost('sess-1', 'main', {
+      inputTokens: 1000,
+      outputTokens: 200,
+      cacheReadInputTokens: 0,
+      cacheWriteInputTokens: 500,
+    }, supabase)
+
+    const uncached = 1000 - 0 - 500
+    const expected = (uncached * 0.0039 + 0 * 0.00039 + 500 * 0.0039 * 1.25 + 200 * 0.0195) / 1000
+    expect(result.costUsd).toBeCloseTo(expected, 6)
+  })
+
+  it('accounts for cache-read and cache-write together', async () => {
+    const supabase = mockSupabaseForTrack({ cost_usd: 0.05, nexus_call_count: 1, input_tokens_total: 1000 })
+    const result = await trackNexusCost('sess-1', 'main', {
+      inputTokens: 1000,
+      outputTokens: 100,
+      cacheReadInputTokens: 300,
+      cacheWriteInputTokens: 400,
+    }, supabase)
+
+    const uncached = 1000 - 300 - 400
+    const expected = (uncached * 0.0039 + 300 * 0.00039 + 400 * 0.0039 * 1.25 + 100 * 0.0195) / 1000
+    expect(result.costUsd).toBeCloseTo(expected, 6)
+  })
+
+  it('never produces negative cost even with inconsistent token counts', async () => {
+    const supabase = mockSupabaseForTrack({ cost_usd: 0.01, nexus_call_count: 1, input_tokens_total: 100 })
+    const result = await trackNexusCost('sess-1', 'main', {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadInputTokens: 80,
+      cacheWriteInputTokens: 80,
+    }, supabase)
+
+    expect(result.costUsd).toBeGreaterThanOrEqual(0)
+  })
+
+  it('treats missing cacheWriteInputTokens as 0', async () => {
+    const supabase = mockSupabaseForTrack({ cost_usd: 0.01, nexus_call_count: 1, input_tokens_total: 500 })
+    const result = await trackNexusCost('sess-1', 'main', {
+      inputTokens: 500,
+      outputTokens: 200,
+      cacheReadInputTokens: 100,
+    }, supabase)
+
+    const uncached = 500 - 100 - 0
+    const expected = (uncached * 0.0039 + 100 * 0.00039 + 200 * 0.0195) / 1000
+    expect(result.costUsd).toBeCloseTo(expected, 6)
+  })
+})
+
 describe('SPEC-006 AC-3: Hard limit €0.50', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -234,15 +293,13 @@ describe('SPEC-006 AC-6: Config from DB (no deploy to change)', () => {
 })
 
 describe('SPEC-006 AC-2: No Nexus call bypasses cost tracking', () => {
-  it('grep confirms every callWithCacheFallback site in reasoning.ts has a matching trackNexusCost', async () => {
+  it('reasoning.ts routes all Nexus calls through nexus-gateway (no direct callWithCacheFallback or trackNexusCost)', async () => {
     const { readFileSync } = await import('fs')
     const content = readFileSync(new URL('../reasoning.ts', import.meta.url), 'utf-8')
 
-    const fallbackCalls = content.match(/callWithCacheFallback\(/g) ?? []
-    const trackCalls = content.match(/trackNexusCost\(/g) ?? []
-
-    expect(fallbackCalls.length).toBeGreaterThanOrEqual(2)
-    expect(trackCalls.length).toBe(fallbackCalls.length)
+    expect(content).not.toContain('callWithCacheFallback(')
+    expect(content).not.toContain('trackNexusCost(')
+    expect(content).toContain('callNexusGated(')
   })
 
   it('callNexusStream is not called in production code (grep)', async () => {

@@ -87,10 +87,17 @@ export async function resolveFallbackChain(
     throw new Error(`No active model for purpose "${purpose}" — check migration 020`)
   }
 
-  const entries = (data as Array<{ model_id: string; fallback_priority: number }>).map(r => ({
-    modelId: r.model_id,
-    priority: r.fallback_priority,
-  }))
+  const seen = new Set<string>()
+  const entries = (data as Array<{ model_id: string; fallback_priority: number }>)
+    .filter(r => {
+      if (seen.has(r.model_id)) return false
+      seen.add(r.model_id)
+      return true
+    })
+    .map(r => ({
+      modelId: r.model_id,
+      priority: r.fallback_priority,
+    }))
 
   chainCache.set(purpose, { entries, expiresAt: Date.now() + CACHE_TTL_MS })
   return entries
@@ -228,7 +235,6 @@ export function invalidatePricingCache(purpose?: ModelPurpose): void {
     pricingCache.delete(purpose)
   } else {
     pricingCache.clear()
-    modelPricingCache.clear()
   }
 }
 
@@ -277,47 +283,31 @@ export async function resolveModelPricing(
   return pricing
 }
 
-const modelPricingCache = new Map<string, PricingCacheEntry>()
-
 export async function resolveModelPricingByModelId(
   modelId: string,
   supabase: SupabaseClient,
-): Promise<ModelPricing> {
-  const cached = modelPricingCache.get(modelId)
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.pricing
-  }
-
-  const { data, error } = await supabase
+  purpose?: ModelPurpose,
+): Promise<ModelPricing | null> {
+  let query = supabase
     .from('model_config')
-    .select('purpose, cost_per_input_1k, cost_per_output_1k, cost_per_cached_input_1k')
+    .select('purpose, model_id, cost_per_input_1k, cost_per_output_1k, cost_per_cached_input_1k')
     .eq('model_id', modelId)
-    .eq('is_active', true)
-    .order('purpose', { ascending: true })
-    .limit(1)
-    .maybeSingle()
+  if (purpose) query = query.eq('purpose', purpose)
+  query = query.eq('is_active', true).order('fallback_priority', { ascending: true }).limit(1)
 
-  if (error || !data) {
-    throw new Error(`No model_config row for model_id "${modelId}" — cannot resolve pricing`)
-  }
+  const { data } = await query.maybeSingle()
+  if (!data) return null
 
-  const row = data as { purpose: string; cost_per_input_1k: number | null; cost_per_output_1k: number | null; cost_per_cached_input_1k: number | null }
+  const row = data as { purpose: ModelPurpose; model_id: string; cost_per_input_1k: number | null; cost_per_output_1k: number | null; cost_per_cached_input_1k: number | null }
+  if (row.cost_per_input_1k == null || row.cost_per_output_1k == null || row.cost_per_cached_input_1k == null) return null
 
-  if (row.cost_per_input_1k == null || row.cost_per_output_1k == null || row.cost_per_cached_input_1k == null) {
-    await trackCostPriceMissing(row.purpose as ModelPurpose, modelId)
-    throw new Error(`Missing price for model "${modelId}" — run migration 024`)
-  }
-
-  const pricing: ModelPricing = {
-    purpose: row.purpose as ModelPurpose,
-    modelId,
+  return {
+    purpose: row.purpose,
+    modelId: row.model_id,
     costPerInput1k: Number(row.cost_per_input_1k),
     costPerOutput1k: Number(row.cost_per_output_1k),
     costPerCachedInput1k: Number(row.cost_per_cached_input_1k),
   }
-
-  modelPricingCache.set(modelId, { pricing, expiresAt: Date.now() + CACHE_TTL_MS })
-  return pricing
 }
 
 export async function rollbackModel(

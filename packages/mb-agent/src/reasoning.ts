@@ -7,7 +7,6 @@ import { loadAgentMemories, persistMemory } from './memory.js'
 import { trackPersistTurnFailed, trackPromptCacheRejected, trackRoutingDecision, getLangfuseConfig } from './langfuse.js'
 import { resolveModel, resolveFallbackChain } from './model-config.js'
 import type { FallbackChainEntry } from './model-config.js'
-import { callNexusSync } from './nexus.js'
 import type { NexusRequest } from './nexus.js'
 import { FallbackChainExhaustedError, FallbackTimeoutError } from './fallback.js'
 import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getToolMaxTokens } from './tools.js'
@@ -18,8 +17,9 @@ import { sanitizeInput } from './input-sanitizer.js'
 import { buildDegradedResponse, formatDegradedForCustomer } from './degradation.js'
 import type { DegradationReason } from './degradation.js'
 import { buildCanary, injectCanary, validateOutput } from './output-validator.js'
-import { trackNexusCost, checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
-import { loadPromptCacheConfig, applyCacheToRequest, callWithCacheFallback } from './prompt-cache.js'
+import { checkCostLimit, estimateInputTokens, checkTokenBudget } from './cost-gate.js'
+import { loadPromptCacheConfig, applyCacheToRequest, removeCacheMarkers } from './prompt-cache.js'
+import { callNexusGated, CostLimitExceededError } from './nexus-gateway.js'
 import { pruneTools, loadPruningConfig } from './tool-pruning.js'
 import { loadToolStatusMessages, buildStatusEvent } from './tool-status.js'
 import type { OnStatusEvent } from './tool-status.js'
@@ -70,11 +70,15 @@ interface ReasoningResult {
   degraded?: { reason: DegradationReason }
   promptVersion?: number | null
   experimentAssignment?: { experimentId: string; variantIndex: number } | null
-  backgroundTasks?: Promise<unknown>[]
+  backgroundTasks?: Promise<void>[]
 }
 
 export class ClientDisconnectedError extends Error {
   constructor() { super('Client disconnected') }
+}
+
+function fullSystemText(request: NexusRequest): string {
+  return request.system.filter(b => b.text).map(b => b.text!).join('\n\n')
 }
 
 export async function reasoningLoop(
@@ -167,6 +171,18 @@ export async function reasoningLoop(
       }
     }
 
+    if (err instanceof CostLimitExceededError) {
+      const degraded = await buildDegradedResponse('cost_limit', session.locale, supabase)
+      return {
+        response: formatDegradedForCustomer(degraded),
+        intent,
+        toolsUsed: [],
+        newMemories: [],
+        securityEvents: [],
+        degraded: { reason: 'cost_limit' },
+      }
+    }
+
     const reason: DegradationReason =
       err instanceof FallbackChainExhaustedError || err instanceof FallbackTimeoutError
         ? 'fallback_exhausted'
@@ -195,7 +211,7 @@ export async function reasoningLoop(
   }
 
   const turnId = crypto.randomUUID()
-  const backgroundTasks: Promise<unknown>[] = []
+  const backgroundTasks: Promise<void>[] = []
 
   backgroundTasks.push(
     persistTurn(session, signal, response, intent, supabase, promptVersion, experimentAssignment).catch((err: unknown) => {
@@ -403,15 +419,20 @@ async function processResponse(
     }
 
     const estimate = estimateInputTokens(
-      currentRequest.system[0]?.text ?? '',
+      fullSystemText(currentRequest),
       currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
       currentRequest.toolConfig,
     )
     await checkTokenBudget(sessionId, estimate)
 
-    const { result: fbResult, cacheRejected } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
-    await trackNexusCost(sessionId, 'main', fbResult, supabase, fbResult.actualModelId)
-    if (cacheRejected) trackPromptCacheRejected(sessionId).catch(() => {})
+    const { result: fbResult, cacheRejected } = await callNexusGated(
+      currentRequest, fallbackChain, nexusConfig, 'main',
+      sessionId, locale, supabase, { skipPreCheck: round > 0 },
+    )
+    if (cacheRejected) {
+      trackPromptCacheRejected(sessionId).catch(() => {})
+      currentRequest = removeCacheMarkers(currentRequest)
+    }
 
     if (fbResult.stopReason !== 'tool_use' || fbResult.toolCalls.length === 0) {
       return { text: fbResult.text, toolsUsed, newMemories }
@@ -476,13 +497,15 @@ async function processResponse(
         ],
       }
       const abortEstimate = estimateInputTokens(
-        currentRequest.system[0]?.text ?? '',
+        fullSystemText(currentRequest),
         currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
         currentRequest.toolConfig,
       )
       await checkTokenBudget(sessionId, abortEstimate)
-      const { result: abortResult } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
-      await trackNexusCost(sessionId, 'main', abortResult, supabase, abortResult.actualModelId)
+      const { result: abortResult } = await callNexusGated(
+        currentRequest, fallbackChain, nexusConfig, 'main',
+        sessionId, locale, supabase, { skipPreCheck: true },
+      )
       return { text: abortResult.text, toolsUsed, newMemories }
     }
 
@@ -497,14 +520,16 @@ async function processResponse(
   }
 
   const finalEstimate = estimateInputTokens(
-    currentRequest.system[0]?.text ?? '',
+    fullSystemText(currentRequest),
     currentRequest.messages as Array<{ role: string; content: Array<{ text: string }> }>,
     currentRequest.toolConfig,
   )
   await checkTokenBudget(sessionId, finalEstimate)
 
-  const { result: finalFbResult } = await callWithCacheFallback(currentRequest, fallbackChain, nexusConfig, 'main')
-  await trackNexusCost(sessionId, 'main', finalFbResult, supabase, finalFbResult.actualModelId)
+  const { result: finalFbResult } = await callNexusGated(
+    currentRequest, fallbackChain, nexusConfig, 'main',
+    sessionId, locale, supabase, { skipPreCheck: true },
+  )
   return { text: finalFbResult.text, toolsUsed, newMemories }
 }
 

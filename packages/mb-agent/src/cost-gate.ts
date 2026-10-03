@@ -30,20 +30,23 @@ const SOFT_TOKEN_LIMIT = 8_000
 export async function trackNexusCost(
   sessionId: string,
   purpose: ModelPurpose,
-  result: Pick<NexusStreamResult, 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens'>,
+  result: Pick<NexusStreamResult, 'inputTokens' | 'outputTokens' | 'cacheReadInputTokens' | 'cacheWriteInputTokens'>,
   supabase: SupabaseClient,
   actualModelId?: string,
 ): Promise<CostTrackResult> {
   const pricing = actualModelId
-    ? await resolveModelPricingByModelId(actualModelId, supabase)
+    ? (await resolveModelPricingByModelId(actualModelId, supabase, purpose)) ?? (await resolveModelPricing(purpose, supabase))
     : await resolveModelPricing(purpose, supabase)
-  const cachedTokens = result.cacheReadInputTokens ?? 0
-  const uncachedInputTokens = result.inputTokens - cachedTokens
-  const costUsd =
+  const cacheReadTokens = result.cacheReadInputTokens ?? 0
+  const cacheWriteTokens = result.cacheWriteInputTokens ?? 0
+  const uncachedInputTokens = Math.max(0, result.inputTokens - cacheReadTokens - cacheWriteTokens)
+  const CACHE_WRITE_MULTIPLIER = 1.25
+  const costUsd = Math.max(0,
     (uncachedInputTokens * pricing.costPerInput1k +
-      cachedTokens * pricing.costPerCachedInput1k +
+      cacheReadTokens * pricing.costPerCachedInput1k +
+      cacheWriteTokens * pricing.costPerInput1k * CACHE_WRITE_MULTIPLIER +
       result.outputTokens * pricing.costPerOutput1k) /
-    1000
+    1000)
 
   const { data, error } = await supabase.rpc('increment_session_cost', {
     p_session_id: sessionId,
@@ -55,7 +58,11 @@ export async function trackNexusCost(
     throw new Error(`Cost tracking failed for session "${sessionId}": ${error.message}`)
   }
 
-  const row = data as { cost_usd: number; nexus_call_count: number }
+  const rows = data as Array<{ cost_usd: number; nexus_call_count: number }> | { cost_usd: number; nexus_call_count: number }
+  const row = Array.isArray(rows) ? rows[0] : rows
+  if (!row) {
+    throw new Error(`Cost tracking failed: session "${sessionId}" not found`)
+  }
   return {
     costUsd,
     totalCostUsd: Number(row.cost_usd),
@@ -142,4 +149,31 @@ export async function checkTokenBudget(
 
   trackTokenBudgetExceeded(sessionId, estimate).catch(() => {})
   return false
+}
+
+const DEFAULT_TIME_BUDGET_MS = 20_000
+let cachedTimeBudgetMs: number | null = null
+let timeBudgetCacheExpiry = 0
+
+export async function resolveTimeBudgetMs(supabase: SupabaseClient): Promise<number> {
+  if (cachedTimeBudgetMs !== null && Date.now() < timeBudgetCacheExpiry) {
+    return cachedTimeBudgetMs
+  }
+  try {
+    const { data } = await supabase
+      .from('cost_gate_config')
+      .select('key, value')
+      .eq('key', 'time_budget_ms')
+    const row = (data ?? [])[0] as { key: string; value: number } | undefined
+    cachedTimeBudgetMs = row ? Number(row.value) : DEFAULT_TIME_BUDGET_MS
+  } catch {
+    cachedTimeBudgetMs = DEFAULT_TIME_BUDGET_MS
+  }
+  timeBudgetCacheExpiry = Date.now() + 60_000
+  return cachedTimeBudgetMs
+}
+
+export function invalidateTimeBudgetCache(): void {
+  cachedTimeBudgetMs = null
+  timeBudgetCacheExpiry = 0
 }
