@@ -8,7 +8,10 @@ import {
   invalidatePromptCache,
 } from '../prompt-versioning.js'
 
-function mockSupabase(tableResponses: Record<string, { data: unknown; error: unknown }> = {}) {
+function mockSupabase(
+  tableResponses: Record<string, { data: unknown; error: unknown }> = {},
+  rpcResponses: Record<string, { data: unknown; error: unknown }> = {},
+) {
   const insertedRows: unknown[] = []
   const updatedRows: unknown[] = []
 
@@ -49,6 +52,18 @@ function mockSupabase(tableResponses: Record<string, { data: unknown; error: unk
     const table = (chain.from as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]
     return Promise.resolve(tableResponses[table] ?? { data: null, error: null }).then(resolve)
   }
+
+  const rpcChain: Record<string, unknown> = {}
+  let lastRpcName = ''
+  for (const m of methods) rpcChain[m] = vi.fn().mockReturnValue(rpcChain)
+  rpcChain.single = vi.fn().mockImplementation(() => {
+    return Promise.resolve(rpcResponses[lastRpcName] ?? { data: null, error: null })
+  })
+
+  chain.rpc = vi.fn().mockImplementation((name: string) => {
+    lastRpcName = name
+    return rpcChain
+  })
 
   return {
     mock: chain as unknown as Parameters<typeof resolveActivePrompt>[1],
@@ -157,37 +172,57 @@ describe('registerPromptVersion', () => {
 })
 
 describe('activatePromptVersion', () => {
-  it('deactivates previous and activates target', async () => {
-    const target = { ...sampleVersion, id: 'v-002', version: 2, is_active: false }
-    const activated = { ...target, is_active: true, activated_at: '2026-10-01T12:00:00Z', activated_by: 'admin@mb.com' }
+  it('deactivates previous and activates target via RPC', async () => {
+    const activated = { ...sampleVersion, id: 'v-002', version: 2, is_active: true, activated_at: '2026-10-01T12:00:00Z', activated_by: 'admin@mb.com' }
 
-    const { mock } = mockSupabase({
-      ccp_prompt_versions: { data: activated, error: null },
-      analytics_events: { data: null, error: null },
-    })
+    const { mock } = mockSupabase(
+      {
+        ccp_prompt_versions: { data: activated, error: null },
+        analytics_events: { data: null, error: null },
+      },
+      {
+        activate_prompt_version: {
+          data: { previous_id: 'v-001', activated_id: 'v-002', activated_version: 2 },
+          error: null,
+        },
+      },
+    )
 
     const result = await activatePromptVersion('v-002', 'admin@mb.com', mock)
     expect(result.activated.isActive).toBe(true)
     expect(result.activated.activatedBy).toBe('admin@mb.com')
   })
 
-  it('throws when version not found', async () => {
-    const { mock } = mockSupabase({
-      ccp_prompt_versions: { data: null, error: null },
-    })
+  it('throws when RPC fails', async () => {
+    const { mock } = mockSupabase(
+      {},
+      {
+        activate_prompt_version: {
+          data: null,
+          error: { message: 'Prompt version not found: nonexistent' },
+        },
+      },
+    )
 
     await expect(activatePromptVersion('nonexistent', 'admin@mb.com', mock))
-      .rejects.toThrow('Prompt version not found')
+      .rejects.toThrow('Failed to activate')
   })
 
   it('invalidates cache after activation', async () => {
-    const target = { ...sampleVersion, id: 'v-002', version: 2 }
-    const activated = { ...target, is_active: true, activated_by: 'admin@mb.com' }
+    const activated = { ...sampleVersion, id: 'v-002', version: 2, is_active: true, activated_by: 'admin@mb.com' }
 
-    const { mock } = mockSupabase({
-      ccp_prompt_versions: { data: activated, error: null },
-      analytics_events: { data: null, error: null },
-    })
+    const { mock } = mockSupabase(
+      {
+        ccp_prompt_versions: { data: activated, error: null },
+        analytics_events: { data: null, error: null },
+      },
+      {
+        activate_prompt_version: {
+          data: { previous_id: 'v-001', activated_id: 'v-002', activated_version: 2 },
+          error: null,
+        },
+      },
+    )
 
     await resolveActivePrompt(PERSONALITY_ID, mock)
     await activatePromptVersion('v-002', 'admin@mb.com', mock)
@@ -200,43 +235,40 @@ describe('activatePromptVersion', () => {
 })
 
 describe('rollbackPromptVersion', () => {
-  function mockRollbackSupabase(configs: unknown[], rolledBackRow: unknown) {
-    let callCount = 0
-    const chain: Record<string, unknown> = {}
-    const methods = [
-      'select', 'insert', 'update', 'delete',
-      'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'is',
-      'order', 'limit', 'or',
-    ]
-    for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
-    chain.from = vi.fn().mockReturnValue(chain)
-    chain.single = vi.fn().mockResolvedValue({ data: rolledBackRow, error: null })
-    chain.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null })
-    chain.then = (resolve: (v: unknown) => void) => {
-      callCount++
-      if (callCount === 1) {
-        return Promise.resolve({ data: configs, error: null }).then(resolve)
-      }
-      return Promise.resolve({ data: null, error: null }).then(resolve)
-    }
-    return chain as unknown as Parameters<typeof rollbackPromptVersion>[1]
-  }
+  it('rolls back to the previous version via RPC', async () => {
+    const rolledBack = { ...sampleVersion, id: 'v-001', version: 1, is_active: true, activated_at: '2026-10-01T12:00:00Z', activated_by: 'admin@mb.com' }
 
-  it('rolls back to the previous version', async () => {
-    const current = { ...sampleVersion, id: 'v-002', version: 2, is_active: true }
-    const prev = { ...sampleVersion, id: 'v-001', version: 1, is_active: false }
-    const rolledBack = { ...prev, is_active: true, activated_at: '2026-10-01T12:00:00Z', activated_by: 'admin@mb.com' }
+    const { mock } = mockSupabase(
+      {
+        ccp_prompt_versions: { data: rolledBack, error: null },
+        analytics_events: { data: null, error: null },
+      },
+      {
+        rollback_prompt_version: {
+          data: { previous_id: 'v-002', rolled_back_to_id: 'v-001', rolled_back_to_version: 1 },
+          error: null,
+        },
+      },
+    )
 
-    const mock = mockRollbackSupabase([current, prev], rolledBack)
     const result = await rollbackPromptVersion(PERSONALITY_ID, 'admin@mb.com', mock)
     expect(result.isActive).toBe(true)
     expect(result.version).toBe(1)
   })
 
-  it('throws when no previous version exists', async () => {
-    const mock = mockRollbackSupabase([], null)
+  it('throws when RPC reports no previous version', async () => {
+    const { mock } = mockSupabase(
+      {},
+      {
+        rollback_prompt_version: {
+          data: null,
+          error: { message: 'No previous prompt version to rollback to' },
+        },
+      },
+    )
+
     await expect(rollbackPromptVersion(PERSONALITY_ID, 'admin@mb.com', mock))
-      .rejects.toThrow('No previous prompt version to rollback to')
+      .rejects.toThrow('Failed to rollback')
   })
 })
 
@@ -275,13 +307,20 @@ describe('listPromptVersions', () => {
 
 describe('prompt_version_switch event (AC-5)', () => {
   it('activation logs prompt_version_switch event', async () => {
-    const target = { ...sampleVersion, id: 'v-002', version: 2 }
-    const activated = { ...target, is_active: true, activated_by: 'admin@mb.com' }
+    const activated = { ...sampleVersion, id: 'v-002', version: 2, is_active: true, activated_by: 'admin@mb.com' }
 
-    const { mock, insertedRows } = mockSupabase({
-      ccp_prompt_versions: { data: activated, error: null },
-      analytics_events: { data: null, error: null },
-    })
+    const { mock } = mockSupabase(
+      {
+        ccp_prompt_versions: { data: activated, error: null },
+        analytics_events: { data: null, error: null },
+      },
+      {
+        activate_prompt_version: {
+          data: { previous_id: 'v-001', activated_id: 'v-002', activated_version: 2 },
+          error: null,
+        },
+      },
+    )
 
     await activatePromptVersion('v-002', 'admin@mb.com', mock)
 
@@ -293,29 +332,20 @@ describe('prompt_version_switch event (AC-5)', () => {
   })
 
   it('rollback logs prompt_version_switch event', async () => {
-    const current = { ...sampleVersion, id: 'v-002', version: 2, is_active: true }
-    const prev = { ...sampleVersion, id: 'v-001', version: 1, is_active: false }
-    const rolledBack = { ...prev, is_active: true, activated_by: 'admin@mb.com' }
+    const rolledBack = { ...sampleVersion, id: 'v-001', version: 1, is_active: true, activated_by: 'admin@mb.com' }
 
-    let callCount = 0
-    const chain: Record<string, unknown> = {}
-    const methods = [
-      'select', 'insert', 'update', 'delete',
-      'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'is',
-      'order', 'limit', 'or',
-    ]
-    for (const m of methods) chain[m] = vi.fn().mockReturnValue(chain)
-    chain.from = vi.fn().mockReturnValue(chain)
-    chain.single = vi.fn().mockResolvedValue({ data: rolledBack, error: null })
-    chain.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null })
-    chain.then = (resolve: (v: unknown) => void) => {
-      callCount++
-      if (callCount === 1) {
-        return Promise.resolve({ data: [current, prev], error: null }).then(resolve)
-      }
-      return Promise.resolve({ data: null, error: null }).then(resolve)
-    }
-    const mock = chain as unknown as Parameters<typeof rollbackPromptVersion>[1]
+    const { mock } = mockSupabase(
+      {
+        ccp_prompt_versions: { data: rolledBack, error: null },
+        analytics_events: { data: null, error: null },
+      },
+      {
+        rollback_prompt_version: {
+          data: { previous_id: 'v-002', rolled_back_to_id: 'v-001', rolled_back_to_version: 1 },
+          error: null,
+        },
+      },
+    )
 
     await rollbackPromptVersion(PERSONALITY_ID, 'admin@mb.com', mock)
 

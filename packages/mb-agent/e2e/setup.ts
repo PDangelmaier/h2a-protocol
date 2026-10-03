@@ -55,6 +55,27 @@ export async function createTestSession(supabase: SupabaseClient): Promise<Sessi
   return { sessionId, dbId, profileId }
 }
 
+const originalFetchRef = globalThis.fetch
+let postgrestRewriteInstalled = false
+
+export function installPostgrestRewrite(): void {
+  if (postgrestRewriteInstalled) return
+  postgrestRewriteInstalled = true
+  const saved = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    const rewritten = url.replace('/rest/v1/', '/')
+    if (rewritten !== url) return saved(rewritten, init)
+    return saved(input, init)
+  }) as typeof fetch
+}
+
+export function uninstallPostgrestRewrite(): void {
+  if (!postgrestRewriteInstalled) return
+  postgrestRewriteInstalled = false
+  globalThis.fetch = originalFetchRef
+}
+
 export function invalidateAllCaches() {
   invalidateModelCache()
   invalidatePricingCache()
