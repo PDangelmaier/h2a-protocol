@@ -295,6 +295,50 @@ describe('SPEC-038: PII-Output-Filter (legacy)', () => {
       const allHits = [...r1.hits, ...r2.hits, ...r3.hits]
       expect(allHits.some(h => h.type === 'email')).toBe(true)
     })
+
+    it('detects IBAN split across two chunks', () => {
+      const filter = new StreamPiiFilter()
+      const r1 = filter.feed('Bitte überweisen Sie den Betrag auf IBAN DE89 3704 0044')
+      const r2 = filter.feed(' 0532 0130 00 als Referenz angeben.')
+      const r3 = filter.flush()
+      const combined = r1.text + r2.text + r3.text
+      expect(combined).not.toContain('0532 0130 00')
+      const allHits = [...r1.hits, ...r2.hits, ...r3.hits]
+      expect(allHits.some(h => h.type === 'iban')).toBe(true)
+    })
+
+    it('detects phone number split across two chunks', () => {
+      const filter = new StreamPiiFilter()
+      const r1 = filter.feed('Für weitere Informationen rufen Sie bitte an unter +49 711')
+      const r2 = filter.feed(' 17-0 und wir helfen Ihnen gerne.')
+      const r3 = filter.flush()
+      const combined = r1.text + r2.text + r3.text
+      expect(combined).not.toContain('+49 711 17-0')
+      const allHits = [...r1.hits, ...r2.hits, ...r3.hits]
+      expect(allHits.some(h => h.type === 'phone')).toBe(true)
+    })
+
+    it('detects plate split across two chunks', () => {
+      const filter = new StreamPiiFilter()
+      const r1 = filter.feed('Das Fahrzeug mit dem Kennzeichen S AB')
+      const r2 = filter.feed(' 1234 ist bei uns registriert worden.')
+      const r3 = filter.flush()
+      const combined = r1.text + r2.text + r3.text
+      expect(combined).not.toContain('S AB 1234')
+      const allHits = [...r1.hits, ...r2.hits, ...r3.hits]
+      expect(allHits.some(h => h.type === 'plate')).toBe(true)
+    })
+
+    it('detects credit card split across two chunks', () => {
+      const filter = new StreamPiiFilter()
+      const r1 = filter.feed('Die hinterlegte Kreditkarte endet auf 4111 1111')
+      const r2 = filter.feed(' 1111 1111 bitte nochmals prüfen.')
+      const r3 = filter.flush()
+      const combined = r1.text + r2.text + r3.text
+      expect(combined).not.toContain('4111 1111 1111 1111')
+      const allHits = [...r1.hits, ...r2.hits, ...r3.hits]
+      expect(allHits.some(h => h.type === 'card')).toBe(true)
+    })
   })
 
   describe('AC-5: pii_masked event', () => {

@@ -187,7 +187,7 @@ export class StreamPiiFilter {
   }
 
   private findSafeBoundary(text: string): number {
-    const minTail = 40
+    const minTail = 50
     if (text.length <= minTail) return 0
     const boundary = text.length - minTail
     const spaceIdx = text.lastIndexOf(' ', boundary)
