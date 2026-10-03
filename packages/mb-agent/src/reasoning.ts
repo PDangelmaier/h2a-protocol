@@ -14,7 +14,7 @@ import { executeToolWithConsent, formatToolsForNexus, getAvailableTools, getTool
 import { buildToolError } from './tool-errors.js'
 import { truncateToolResult } from './truncation.js'
 import { loadGrantedConsents } from './consent.js'
-import { sanitizeInput } from './input-sanitizer.js'
+import { sanitizeInput, getGuardrailConfig } from './input-sanitizer.js'
 import { buildDegradedResponse, formatDegradedForCustomer } from './degradation.js'
 import type { DegradationReason } from './degradation.js'
 import { buildCanary, injectCanary, validateOutput } from './output-validator.js'
@@ -359,6 +359,11 @@ async function buildNexusRequest(
 
   if (tools.length > 0) {
     request.toolConfig = { tools: formatToolsForNexus(tools) }
+  }
+
+  const gc = getGuardrailConfig()
+  if (gc.enabled && gc.guardrailId && gc.guardrailVersion) {
+    request.guardrailConfig = { guardrailIdentifier: gc.guardrailId, guardrailVersion: gc.guardrailVersion }
   }
 
   return { request, routing }
