@@ -24,7 +24,7 @@ PATTERNS=(
   'Bearer [a-zA-Z0-9_.=-]{40,}'
 )
 
-EXCLUDE_PATHS="node_modules|\.git/|dist/|\.lock$|secret-scan\.sh|/secret-scan-selftest(/|$)"
+EXCLUDE_PATHS="node_modules|\.git/|dist/|\.lock$|secret-scan\.sh|(^|/)secret-scan-selftest(/|$)"
 
 if [ "$MODE" = "self-test" ]; then
   exec "$0" --self-test-internal

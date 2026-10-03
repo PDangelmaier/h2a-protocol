@@ -163,7 +163,7 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
 
     expect(Number(sessionRow!.cost_usd)).toBeGreaterThan(0)
     expect(sessionRow!.nexus_call_count).toBe(3)
-    expect(nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse')).length).toBe(1)
+    expect(nexus.requests.filter(r => r.url.includes('claude-sonnet-5-5/converse')).length).toBe(1)
 
     const { data: ttftEvents } = await supabase
       .from('analytics_events')
@@ -190,7 +190,7 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
     expect(fullText).toContain('EQS')
 
-    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-5-5/converse'))
     expect(mainRequests.length).toBe(2)
     const secondCall = mainRequests[1]
     const msgs = secondCall.body.messages as Array<{ role: string; content: unknown[] }>
@@ -208,7 +208,7 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const { events, bgTasks } = await sendStream('Konfiguriere mir einen EQS')
     await Promise.allSettled(bgTasks)
 
-    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-5-5/converse'))
     expect(mainRequests.length).toBe(2)
     const secondReq = mainRequests[1]
     const msgs = secondReq.body.messages as Array<{ role: string; content: unknown[] }>
@@ -296,7 +296,7 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
     const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
     expect(fullText).toContain('Berater')
-    const sonnetRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const sonnetRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-5-5/converse'))
     const haikuRequests = nexus.requests.filter(r => r.url.includes('claude-haiku-4-5/converse'))
     expect(sonnetRequests.length).toBe(1)
     expect(haikuRequests.length).toBe(3)
@@ -414,7 +414,7 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const { events, bgTasks } = await sendStream('Konfiguriere mir einen EQS')
     await Promise.allSettled(bgTasks)
 
-    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const mainRequests = nexus.requests.filter(r => r.url.includes('claude-sonnet-5-5/converse'))
     expect(mainRequests.length).toBe(2)
 
     const secondReq = mainRequests[1]
@@ -465,7 +465,7 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     const { bgTasks } = await sendStream('Hallo')
     await Promise.allSettled(bgTasks)
 
-    const converseReq = nexus.requests.find(r => r.url.includes('claude-sonnet-4-6/converse'))
+    const converseReq = nexus.requests.find(r => r.url.includes('claude-sonnet-5-5/converse'))
     const toolConfig = converseReq!.body.toolConfig as { tools: Array<{ toolSpec: { name: string } }> }
     const toolNames = toolConfig.tools.map(t => t.toolSpec.name)
 
