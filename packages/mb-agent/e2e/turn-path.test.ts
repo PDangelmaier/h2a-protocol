@@ -537,6 +537,18 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(Number(row.input_tokens_total)).toBe(600)
   })
 
+  it('SPEC-045 AC-6: fast routing default off — simple turn uses main model', async () => {
+    nexus.enqueueText('Hallo! Wie kann ich helfen?')
+
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
+
+    expect(nexus.requests.length).toBeGreaterThanOrEqual(1)
+    const firstReq = nexus.requests[0]
+    const modelId = firstReq.body.modelId ?? (firstReq.url.match(/\/model\/([^/]+)\//)?.[1])
+    expect(modelId).not.toContain('haiku')
+  })
+
   it('AC-7: Fehler ohne Fallback → degradierte SSE-Antwort + backgroundTasks', async () => {
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')
