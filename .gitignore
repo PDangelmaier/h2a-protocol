@@ -10,3 +10,6 @@ __pycache__/
 .env
 .env.*
 .doppler/
+doppler.env
+doppler.json
+.doppler.yaml
