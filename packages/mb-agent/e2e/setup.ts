@@ -4,7 +4,7 @@ import { invalidateModelCache, invalidatePricingCache } from '../src/model-confi
 import { clearConsentCache } from '../src/consent.js'
 import { invalidatePromptCacheConfig } from '../src/prompt-cache.js'
 import { invalidateRoutingConfig } from '../src/turn-classifier.js'
-import type { AgentConfig } from '../src/types.js'
+import type { HandlerEnv } from '../src/handler.js'
 
 export const E2E_SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? ''
 export const E2E_SUPABASE_SERVICE_KEY = process.env.E2E_SUPABASE_SERVICE_KEY ?? ''
@@ -14,13 +14,12 @@ export function getSupabase(): SupabaseClient {
   return createClient(E2E_SUPABASE_URL, E2E_SUPABASE_SERVICE_KEY)
 }
 
-export function buildConfig(): AgentConfig {
+export function buildHandlerEnv(): HandlerEnv {
   return {
     supabaseUrl: E2E_SUPABASE_URL,
     supabaseServiceKey: E2E_SUPABASE_SERVICE_KEY,
-    nexus: { endpoint: NEXUS_FAKE_ENDPOINT, bearerToken: 'e2e-fake-token' },
-    market: 'de',
-    defaultLocale: 'de-DE',
+    nexusEndpoint: NEXUS_FAKE_ENDPOINT,
+    nexusToken: 'e2e-fake-token',
   }
 }
 
@@ -55,20 +54,6 @@ export async function createTestSession(supabase: SupabaseClient): Promise<Sessi
   return { sessionId, dbId, profileId }
 }
 
-export function buildSessionState(fixture: SessionFixture) {
-  return {
-    id: fixture.sessionId,
-    dbId: fixture.dbId,
-    profileId: fixture.profileId,
-    channel: 'web' as const,
-    locale: 'de-DE',
-    market: 'de',
-    journeyPhase: 'research' as const,
-    pidScore: 50,
-    conversationHistory: [],
-  }
-}
-
 export function invalidateAllCaches() {
   invalidateModelCache()
   invalidatePricingCache()
@@ -78,6 +63,7 @@ export function invalidateAllCaches() {
 }
 
 export async function cleanupSession(supabase: SupabaseClient, fixture: SessionFixture) {
+  await supabase.from('analytics_events').delete().eq('session_id', fixture.sessionId)
   await supabase.from('conversation_turns').delete().eq('session_id', fixture.dbId)
   await supabase.from('conversations').delete().eq('h2a_session_id', fixture.sessionId)
   await supabase.from('agent_memories').delete().eq('profile_id', fixture.profileId)
@@ -174,4 +160,67 @@ export function createNexusMock(): NexusMock {
     },
   }
   return mock
+}
+
+export interface SseEvent {
+  type: string
+  [key: string]: unknown
+}
+
+export async function parseSseStream(response: Response): Promise<SseEvent[]> {
+  const events: SseEvent[] = []
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    const lines = buffer.split('\n\n')
+    buffer = lines.pop()!
+
+    for (const chunk of lines) {
+      const trimmed = chunk.trim()
+      if (!trimmed) continue
+      const dataPrefix = 'data: '
+      const dataLine = trimmed.split('\n').find(l => l.startsWith(dataPrefix))
+      if (dataLine) {
+        try {
+          events.push(JSON.parse(dataLine.slice(dataPrefix.length)))
+        } catch { /* ignore malformed */ }
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    const dataLine = buffer.trim().split('\n').find(l => l.startsWith('data: '))
+    if (dataLine) {
+      try {
+        events.push(JSON.parse(dataLine.slice(6)))
+      } catch { /* ignore */ }
+    }
+  }
+
+  return events
+}
+
+export function buildStreamRequest(sessionId: string, text: string, baseUrl = 'http://localhost'): Request {
+  return new Request(`${baseUrl}/h2a/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-H2A-Session': sessionId,
+    },
+    body: JSON.stringify({ text }),
+  })
+}
+
+export function buildSessionOpenRequest(body: Record<string, unknown>, baseUrl = 'http://localhost'): Request {
+  return new Request(`${baseUrl}/h2a/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'session.open', ...body }),
+  })
 }

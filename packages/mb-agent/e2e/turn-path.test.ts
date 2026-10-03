@@ -1,19 +1,22 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   E2E_SUPABASE_URL,
   E2E_SUPABASE_SERVICE_KEY,
   getSupabase,
-  buildConfig,
+  buildHandlerEnv,
   createTestSession,
-  buildSessionState,
   invalidateAllCaches,
   cleanupSession,
   createNexusMock,
+  parseSseStream,
+  buildStreamRequest,
+  buildSessionOpenRequest,
   type SessionFixture,
   type NexusMock,
+  type SseEvent,
 } from './setup.js'
-import { reasoningLoop } from '../src/reasoning.js'
+import { handleRequest, type HandlerEnv } from '../src/handler.js'
 
 const skip = !E2E_SUPABASE_URL || !E2E_SUPABASE_SERVICE_KEY
 
@@ -21,10 +24,11 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
   let supabase: SupabaseClient
   let nexus: NexusMock
   let fixture: SessionFixture
-  const config = buildConfig()
+  let env: HandlerEnv
 
   beforeAll(() => {
     supabase = getSupabase()
+    env = buildHandlerEnv()
   })
 
   beforeEach(async () => {
@@ -39,6 +43,13 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     await cleanupSession(supabase, fixture)
   })
 
+  async function sendStream(text: string): Promise<{ events: SseEvent[]; bgTasks: Promise<unknown>[] }> {
+    const req = buildStreamRequest(fixture.sessionId, text)
+    const { response, backgroundTasks } = await handleRequest(req, env)
+    const events = await parseSseStream(response)
+    return { events, bgTasks: backgroundTasks }
+  }
+
   it('AC-1: Suite läuft gegen echte PostgreSQL, nur Nexus gemockt', async () => {
     const { data, error } = await supabase
       .from('agent_tools')
@@ -50,19 +61,37 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(data!.length).toBeGreaterThan(0)
   })
 
-  it('AC-2: Einfacher Turn — Antworttext + DB-Einträge', async () => {
+  it('AC-1b: session.open über handleRequest', async () => {
+    const req = buildSessionOpenRequest({
+      customerId: fixture.profileId,
+      channel: 'web',
+    })
+    const { response } = await handleRequest(req, env)
+    expect(response.status).toBe(200)
+
+    const body = await response.json()
+    expect(body.type).toBe('session.ack')
+    expect(body.sessionId).toBeDefined()
+  })
+
+  it('AC-2: Einfacher Turn — SSE-Events + DB-Einträge', async () => {
     nexus.enqueueText('Guten Tag! Ich bin MAX, Ihr Mercedes-Benz Berater.')
 
-    const session = buildSessionState(fixture)
-    const signal = { type: 'text', content: 'Hallo', timestamp: new Date() }
-    const result = await reasoningLoop(session, signal, config)
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
 
-    expect(result.response).toContain('MAX')
-    expect(result.securityEvents).toEqual([])
+    const frameEvents = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    expect(frameEvents.length).toBeGreaterThanOrEqual(1)
+    const textContent = frameEvents.map(e => (e.content as { text: string }).text).join('')
+    expect(textContent).toContain('MAX')
 
-    if (result.backgroundTasks?.length) {
-      await Promise.allSettled(result.backgroundTasks)
-    }
+    const endEvent = events.find(e => e.type === 'agent.frame' && e.frameType === 'end')
+    expect(endEvent).toBeDefined()
+
+    const presenceEvents = events.filter(e => e.type === 'presence.update')
+    expect(presenceEvents.length).toBeGreaterThanOrEqual(2)
+    expect(presenceEvents[0].state).toBe('conversing')
+    expect(presenceEvents.at(-1)!.state).toBe('attentive')
 
     const { data: turns } = await supabase
       .from('conversation_turns')
@@ -86,29 +115,33 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
       .eq('id', fixture.dbId)
       .single()
 
-    expect(sessionRow).toBeDefined()
     expect(Number(sessionRow!.cost_usd)).toBeGreaterThan(0)
     expect(sessionRow!.nexus_call_count).toBeGreaterThanOrEqual(1)
-
     expect(nexus.requests.length).toBeGreaterThanOrEqual(1)
-    const nexusReq = nexus.requests[0]
-    expect(nexusReq.body.system).toBeDefined()
-    expect(nexusReq.body.messages).toBeDefined()
-    const lastMsg = (nexusReq.body.messages as Array<{ role: string; content: Array<{ text: string }> }>).at(-1)
-    expect(lastMsg?.role).toBe('user')
-    expect(lastMsg?.content[0]?.text).toBe('Hallo')
+
+    const { data: ttftEvents } = await supabase
+      .from('analytics_events')
+      .select('event_type, metadata')
+      .eq('session_id', fixture.sessionId)
+      .eq('event_type', 'ttft_measurement')
+
+    expect(ttftEvents).toBeDefined()
+    expect(ttftEvents!.length).toBeGreaterThanOrEqual(1)
+    const ttft = ttftEvents![0].metadata as { ttft_ms: number; total_ms: number }
+    expect(ttft.ttft_ms).toBeGreaterThan(0)
+    expect(ttft.total_ms).toBeGreaterThanOrEqual(ttft.ttft_ms)
   })
 
-  it('AC-3: Turn mit Tool — vehicle_catalog (ohne Consent) + configurator (mit Consent)', async () => {
+  it('AC-3: Turn mit Tool — vehicle_catalog (ohne Consent) + Nexus-Request', async () => {
     nexus.enqueueToolUse('tu-1', 'vehicle_catalog', { query: 'EQS' })
     nexus.enqueueText('Der Mercedes-Benz EQS ist unser elektrisches Flaggschiff.')
 
-    const session = buildSessionState(fixture)
-    const signal = { type: 'text', content: 'Zeig mir den EQS', timestamp: new Date() }
-    const result = await reasoningLoop(session, signal, config)
+    const { events, bgTasks } = await sendStream('Zeig mir den EQS')
+    await Promise.allSettled(bgTasks)
 
-    expect(result.response).toContain('EQS')
-    expect(result.toolsUsed).toContain('vehicle_catalog')
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
+    expect(fullText).toContain('EQS')
 
     expect(nexus.requests.length).toBe(2)
     const secondCall = nexus.requests[1]
@@ -123,9 +156,8 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     nexus.enqueueToolUse('tu-2', 'configurator', { model: 'EQS' })
     nexus.enqueueText('Leider kann ich den Konfigurator nicht nutzen.')
 
-    const session = buildSessionState(fixture)
-    const signal = { type: 'text', content: 'Konfiguriere mir einen EQS', timestamp: new Date() }
-    const result = await reasoningLoop(session, signal, config)
+    const { events, bgTasks } = await sendStream('Konfiguriere mir einen EQS')
+    await Promise.allSettled(bgTasks)
 
     expect(nexus.requests.length).toBe(2)
     const secondReq = nexus.requests[1]
@@ -144,29 +176,18 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
   it('AC-4: Zweiter Turn — History des ersten Turns im Nexus-Request', async () => {
     nexus.enqueueText('Guten Tag! Wie kann ich helfen?')
 
-    const session = buildSessionState(fixture)
-    const firstSignal = { type: 'text', content: 'Hallo', timestamp: new Date() }
-    const firstResult = await reasoningLoop(session, firstSignal, config)
-
-    if (firstResult.backgroundTasks?.length) {
-      await Promise.allSettled(firstResult.backgroundTasks)
-    }
+    const { bgTasks: bgTasks1 } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks1)
 
     nexus.requests.length = 0
 
     nexus.enqueueText('Natürlich! Der EQS hat eine Reichweite von bis zu 770 km.')
 
-    const sessionWithHistory = {
-      ...session,
-      conversationHistory: [
-        { role: 'user' as const, content: 'Hallo' },
-        { role: 'assistant' as const, content: firstResult.response },
-      ],
-    }
-    const secondSignal = { type: 'text', content: 'Erzähl mir vom EQS', timestamp: new Date() }
-    const secondResult = await reasoningLoop(sessionWithHistory, secondSignal, config)
+    const { events, bgTasks: bgTasks2 } = await sendStream('Erzähl mir vom EQS')
+    await Promise.allSettled(bgTasks2)
 
-    expect(secondResult.response).toBeTruthy()
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    expect(textFrames.length).toBeGreaterThanOrEqual(1)
 
     const secondReq = nexus.requests[0]
     const msgs = secondReq.body.messages as Array<{ role: string; content: Array<{ text: string }> }>
@@ -179,19 +200,22 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(msgs[2].content[0].text).toBe('Erzähl mir vom EQS')
   })
 
-  it('AC-5: Kostenlimit — kein Nexus-Call, degradierte Antwort', async () => {
+  it('AC-5: Kostenlimit — kein Nexus-Call, degradierte SSE-Antwort', async () => {
     await supabase
       .from('sessions')
       .update({ cost_usd: 100.0, nexus_call_count: 500 })
       .eq('id', fixture.dbId)
 
-    const session = buildSessionState(fixture)
-    const signal = { type: 'text', content: 'Hallo', timestamp: new Date() }
-    const result = await reasoningLoop(session, signal, config)
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
 
-    expect(result.degraded).toBeDefined()
-    expect(result.degraded!.reason).toBe('cost_limit')
-    expect(result.response).toBeTruthy()
+    const degradedEvent = events.find(e => e.type === 'degraded_response')
+    expect(degradedEvent).toBeDefined()
+    expect(degradedEvent!.reason).toBe('cost_limit')
+
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    expect(textFrames.length).toBeGreaterThanOrEqual(1)
+
     expect(nexus.requests).toHaveLength(0)
   })
 
@@ -221,11 +245,12 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
       invalidateAllCaches()
     }
 
-    const session = buildSessionState(fixture)
-    const signal = { type: 'text', content: 'Hallo', timestamp: new Date() }
-    const result = await reasoningLoop(session, signal, config)
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
 
-    expect(result.response).toContain('Berater')
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    const fullText = textFrames.map(e => (e.content as { text: string }).text).join('')
+    expect(fullText).toContain('Berater')
     expect(nexus.requests.length).toBe(2)
 
     const { data: sessionRow } = await supabase
@@ -237,17 +262,19 @@ describe.skipIf(skip)('SPEC-043: Turn-Pfad E2E', { timeout: 60_000 }, () => {
     expect(Number(sessionRow!.cost_usd)).toBeGreaterThan(0)
   })
 
-  it('AC-7: Fehler ohne Fallback → degradierte Antwort + backgroundTasks', async () => {
+  it('AC-7: Fehler ohne Fallback → degradierte SSE-Antwort + backgroundTasks', async () => {
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')
     nexus.enqueueError(503, 'Service Unavailable')
 
-    const session = buildSessionState(fixture)
-    const signal = { type: 'text', content: 'Hallo', timestamp: new Date() }
-    const result = await reasoningLoop(session, signal, config)
+    const { events, bgTasks } = await sendStream('Hallo')
+    await Promise.allSettled(bgTasks)
 
-    expect(result.degraded).toBeDefined()
-    expect(['fallback_exhausted', 'internal_error']).toContain(result.degraded!.reason)
-    expect(result.response).toBeTruthy()
+    const degradedEvent = events.find(e => e.type === 'degraded_response')
+    expect(degradedEvent).toBeDefined()
+    expect(['fallback_exhausted', 'internal_error']).toContain(degradedEvent!.reason)
+
+    const textFrames = events.filter(e => e.type === 'agent.frame' && e.frameType === 'text')
+    expect(textFrames.length).toBeGreaterThanOrEqual(1)
   })
 })

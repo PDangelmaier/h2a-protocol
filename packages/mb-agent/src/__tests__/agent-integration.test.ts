@@ -313,19 +313,24 @@ describe('SPEC-033: Agent Integration — Edge→mb-agent', () => {
     }
   })
 
-  it('AC-7: INV-11 — Edge Function uses reasoningLoop, not direct Nexus (source-level assertion)', async () => {
+  it('AC-7: INV-11 — Edge Function delegates to handleRequest from mb-agent', async () => {
     const fs = await import('fs')
     const edgeSrc = fs.readFileSync(
       new URL('../../../../supabase/functions/h2a/index.ts', import.meta.url),
       'utf-8',
     )
 
-    expect(edgeSrc).toContain("reasoningLoop")
+    expect(edgeSrc).toContain("handleRequest")
     expect(edgeSrc).toContain("from '@h2a/mb-agent'")
     expect(edgeSrc).not.toContain('buildMinimalSystemPrompt')
     expect(edgeSrc).not.toContain('resolveActiveModel')
     expect(edgeSrc).not.toContain('extractTextDelta')
     expect(edgeSrc).not.toContain('persistStreamedTurn')
-    expect(edgeSrc).toContain('reasoningLoop(sessionState, userSignal, agentConfig, onStatusEvent, req.signal)')
+
+    const handlerSrc = fs.readFileSync(
+      new URL('../handler.ts', import.meta.url),
+      'utf-8',
+    )
+    expect(handlerSrc).toContain('reasoningLoop')
   })
 })
