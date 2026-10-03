@@ -33,7 +33,13 @@ const SYSTEM_PROMPT_MARKERS = [
 const MARKER_THRESHOLD = 2
 
 export function validateOutput(output: string, sessionId: string, locale = 'de'): OutputValidationResult {
-  if (output.includes(CANARY_PREFIX)) {
+  const hash = simpleHash(sessionId)
+  const canaryDetected =
+    output.includes(CANARY_PREFIX) ||
+    output.includes(`&lt;!-- H2A_CANARY:${hash}--&gt;`) ||
+    output.includes(`H2A_CANARY:${hash}`)
+
+  if (canaryDetected) {
     return {
       safe: false,
       action: 'replace',

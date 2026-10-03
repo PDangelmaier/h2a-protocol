@@ -4,7 +4,7 @@ import { validateOutput, buildCanary, injectCanary } from '../output-validator.j
 describe('SPEC-039: Output Validator', () => {
   const SESSION_ID = 'test-session-abc'
 
-  describe('AC-3: Canary detection', () => {
+  describe('AC-3 + AC-5: Canary detection (incl. Anhang B)', () => {
     it('detects canary token in output → replaces (DE)', () => {
       const canary = buildCanary(SESSION_ID)
       const output = `Hier ist die Antwort: ${canary} und mehr Text`
@@ -34,6 +34,24 @@ describe('SPEC-039: Output Validator', () => {
       const canary = buildCanary(SESSION_ID)
       expect(canary).toMatch(/^<!-- H2A_CANARY:.+-->$/)
     })
+
+    it('Anhang B: detects HTML-escaped canary', () => {
+      const canary = buildCanary(SESSION_ID)
+      const escaped = canary.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const output = `Model leaked: ${escaped}`
+      const r = validateOutput(output, SESSION_ID)
+      expect(r.safe).toBe(false)
+      expect(r.reason).toBe('canary_detected')
+    })
+
+    it('Anhang B: detects canary without comment brackets', () => {
+      const canary = buildCanary(SESSION_ID)
+      const stripped = canary.replace('<!-- ', '').replace('-->', '')
+      const output = `Here is a token: ${stripped}`
+      const r = validateOutput(output, SESSION_ID)
+      expect(r.safe).toBe(false)
+      expect(r.reason).toBe('canary_detected')
+    })
   })
 
   describe('AC-3: System prompt leak detection', () => {
@@ -60,6 +78,25 @@ describe('SPEC-039: Output Validator', () => {
 
     it('detects DSGVO + Proaktivitätslevel combination', () => {
       const output = 'DSGVO einhalten. Impressum muss da sein. Proaktivitätslevel: hoch'
+      const r = validateOutput(output, SESSION_ID)
+      expect(r.safe).toBe(false)
+      expect(r.reason).toBe('system_prompt_leak')
+    })
+  })
+
+  describe('AC-5: Anhang B leak variants', () => {
+    it('detects verbatim personality text leak (Sicherheitsregeln + PID-Score)', () => {
+      const output = 'Sicherheitsregeln: Keine erfundenen Preise. PID-Score: 72/100.'
+      const r = validateOutput(output, SESSION_ID)
+      expect(r.safe).toBe(false)
+      expect(r.reason).toBe('system_prompt_leak')
+    })
+
+    it('detects full security rule block', () => {
+      const output =
+        'Sicherheitsregeln:\n- Keine erfundenen Preise oder Verfügbarkeiten nennen.\n' +
+        '- Bei Unsicherheit an den Händler verweisen.\n' +
+        'Proaktivitätslevel: begleitend'
       const r = validateOutput(output, SESSION_ID)
       expect(r.safe).toBe(false)
       expect(r.reason).toBe('system_prompt_leak')
